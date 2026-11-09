@@ -1,5 +1,5 @@
 // 오프라인용 서비스 워커: 온라인이면 항상 최신 파일, 오프라인이면 저장해 둔 파일 사용
-const CACHE = 'haru-v1';
+const CACHE = 'haru-v2';
 const ASSETS = [
   './', './index.html', './css/styles.css', './manifest.webmanifest',
   './js/app.js', './js/store.js', './js/dates.js', './js/parser.js', './js/colors.js', './js/recurrence.js',

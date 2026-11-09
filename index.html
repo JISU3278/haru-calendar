@@ -19,7 +19,11 @@
   <div class="app">
     <header class="topbar">
       <div class="topbar-row">
-        <h1 id="title" class="title"></h1>
+        <div class="seg" role="tablist" aria-label="보기">
+          <button type="button" data-view="month" role="tab">월간</button>
+          <button type="button" data-view="week" role="tab">주간</button>
+          <button type="button" data-view="day" role="tab">일간</button>
+        </div>
         <div class="top-actions">
           <button id="todayBtn" class="chip" type="button">오늘</button>
           <button id="settingsBtn" class="icon-btn" type="button" aria-label="설정">
@@ -28,11 +32,7 @@
         </div>
       </div>
       <div class="toolbar">
-        <div class="seg" role="tablist" aria-label="보기">
-          <button type="button" data-view="month" role="tab">월간</button>
-          <button type="button" data-view="week" role="tab">주간</button>
-          <button type="button" data-view="day" role="tab">일간</button>
-        </div>
+        <h1 id="title" class="title"></h1>
         <div class="nav">
           <button id="prevBtn" class="icon-btn" type="button" aria-label="이전">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>

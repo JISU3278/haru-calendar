@@ -45,24 +45,51 @@ function render() {
   else main.innerHTML = renderDay();
 }
 
+const isTodo = (t) => t.kind === 'todo';
+const KIND_LABEL = { event: '일정', todo: '할 일' };
+
+// 일정: 보기만 / 할 일: 오른쪽 끝에 완료 체크
 function renderTaskItem(t) {
+  const todo = isTodo(t);
   const badges = [];
   if (t.time) badges.push(`<span class="badge time">${esc(t.time)}</span>`);
   if (t.dateUndecided) badges.push('<span class="badge warn">날짜 미정</span>');
   if (t.seriesId) badges.push('<span class="badge">반복</span>');
   return `
-    <li class="task ${t.done ? 'done' : ''}" data-id="${t.id}" style="${colorVars(t.color)}">
-      <button class="check" type="button" data-action="toggle" aria-label="${t.done ? '완료 취소' : '완료'}">${CHECK_SVG}</button>
+    <li class="task ${todo ? 'todo' : 'event'} ${todo && t.done ? 'done' : ''}" data-id="${t.id}" style="${colorVars(t.color)}">
       <button class="task-body" type="button" data-action="edit">
         <span class="t-title">${esc(t.title)}</span>
         <span class="t-meta">${badges.join('')}</span>
         ${t.note ? `<span class="t-note">${esc(t.note)}</span>` : ''}
       </button>
+      ${todo ? `<button class="check" type="button" data-action="toggle" aria-label="${t.done ? '완료 취소' : '완료'}">${CHECK_SVG}</button>` : ''}
     </li>`;
 }
 
 function renderTaskList(list) {
   return `<ul class="tasks">${list.map(renderTaskItem).join('')}</ul>`;
+}
+
+// 하루 목록: 일정 / 할 일 두 묶음으로
+function renderSections(list) {
+  const events = list.filter((t) => !isTodo(t));
+  const todos = list.filter(isTodo);
+  return `
+    ${events.length ? `<p class="section-label">일정</p>${renderTaskList(events)}` : ''}
+    ${todos.length ? `<p class="section-label">할 일</p>${renderTaskList(todos)}` : ''}`;
+}
+
+function todoCount(list) {
+  const todos = list.filter(isTodo);
+  return todos.length ? `할 일 ${todos.filter((t) => t.done).length}/${todos.length} 완료` : '';
+}
+
+function addButtons(ds) {
+  return `
+    <div class="add-row">
+      <button class="add-inline" type="button" data-action="add" data-kind="event" data-for="${ds}">+ 일정</button>
+      <button class="add-inline" type="button" data-action="add" data-kind="todo" data-for="${ds}">+ 할 일</button>
+    </div>`;
 }
 
 function renderMonth() {
@@ -95,7 +122,7 @@ function renderMonth() {
     cells += `
       <button class="${cls}" type="button" data-date="${ds}" aria-label="${formatMD(d)}, 할 일 ${list.length}개">
         <span class="num">${d.getDate()}</span>
-        ${shown.map((t) => `<span class="lbl ${t.done ? 'done' : ''}" style="${colorVars(t.color)}">${esc(t.title)}</span>`).join('')}
+        ${shown.map((t) => `<span class="lbl ${isTodo(t) ? 'todo' : ''} ${isTodo(t) && t.done ? 'done' : ''}" style="${colorVars(t.color)}">${esc(t.title)}</span>`).join('')}
         ${more > 0 ? `<span class="more">+${more}</span>` : ''}
       </button>`;
   }
@@ -109,10 +136,10 @@ function renderMonth() {
     <section class="panel">
       <div class="panel-head">
         <h2>${formatMD(cursor)}</h2>
-        <span class="count">${selList.length ? `${selList.filter((t) => t.done).length}/${selList.length} 완료` : ''}</span>
+        <span class="count">${todoCount(selList)}</span>
       </div>
-      ${selList.length ? renderTaskList(selList) : '<p class="empty">할 일이 없어요</p>'}
-      <button class="add-inline" type="button" data-action="add" data-for="${selStr}">+ 할 일 추가</button>
+      ${selList.length ? renderSections(selList) : '<p class="empty">일정과 할 일이 없어요</p>'}
+      ${addButtons(selStr)}
     </section>`;
 }
 
@@ -144,19 +171,14 @@ function renderWeek() {
 function renderDay() {
   const ds = ymd(state.cursor);
   const list = store.byDate(ds);
-  const untimed = list.filter((t) => !t.time);
-  const timed = list.filter((t) => t.time);
-  const done = list.filter((t) => t.done).length;
   return `
     <section class="dayview">
       <div class="panel-head">
         <h2>${formatMD(state.cursor)}</h2>
-        <span class="count">${list.length ? `${done}/${list.length} 완료` : ''}</span>
+        <span class="count">${todoCount(list)}</span>
       </div>
-      ${!list.length ? '<p class="empty">오늘은 할 일이 없어요</p>' : ''}
-      ${untimed.length ? `${timed.length ? '<p class="section-label">할 일</p>' : ''}${renderTaskList(untimed)}` : ''}
-      ${timed.length ? `<p class="section-label">시간 일정</p>${renderTaskList(timed)}` : ''}
-      <button class="add-inline" type="button" data-action="add" data-for="${ds}">+ 할 일 추가</button>
+      ${list.length ? renderSections(list) : '<p class="empty">일정과 할 일이 없어요</p>'}
+      ${addButtons(ds)}
     </section>`;
 }
 
@@ -194,7 +216,7 @@ $('#main').addEventListener('click', (e) => {
   } else if (el.dataset.action === 'edit') {
     openTaskSheet(store.get(el.closest('[data-id]').dataset.id));
   } else if (el.dataset.action === 'add') {
-    openTaskSheet(null, el.dataset.for);
+    openTaskSheet(null, el.dataset.for, el.dataset.kind || 'event');
   } else if (el.dataset.gotoDay) {
     state.cursor = parseYmd(el.dataset.gotoDay);
     setView('day');
@@ -301,9 +323,13 @@ const pickedTime = (root) => ($('[data-time-on]', root).checked ? $('[data-time]
 function openActionSheet() {
   openSheet('추가하기', `
     <div class="action-list">
-      <button type="button" data-act="task">
-        <span class="action-icon">✏️</span>
-        <span class="action-text"><strong>할 일 추가</strong><small>날짜를 정해 하나씩 등록</small></span>
+      <button type="button" data-act="event">
+        <span class="action-icon">📅</span>
+        <span class="action-text"><strong>일정 추가</strong><small>캘린더에 보여주기만 하는 일정</small></span>
+      </button>
+      <button type="button" data-act="todo">
+        <span class="action-icon">✅</span>
+        <span class="action-text"><strong>할 일 추가</strong><small>완료 체크를 할 수 있는 할 일</small></span>
       </button>
       <button type="button" data-act="bulk">
         <span class="action-icon">🔁</span>
@@ -317,7 +343,7 @@ function openActionSheet() {
     sheet.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
       if (!b) return;
-      if (b.dataset.act === 'task') openTaskSheet(null, ymd(state.cursor));
+      if (b.dataset.act === 'event' || b.dataset.act === 'todo') openTaskSheet(null, ymd(state.cursor), b.dataset.act);
       if (b.dataset.act === 'bulk') openBulkSheet();
       if (b.dataset.act === 'import') openImportSheet();
     });
@@ -326,14 +352,39 @@ function openActionSheet() {
 
 /* ───────────────── 할 일 추가/수정 ───────────────── */
 
-function openTaskSheet(task, dateStr) {
-  const editing = !!task;
-  const t = task || { title: '', date: dateStr || ymd(state.cursor), color: DEFAULT_COLOR, time: null, note: '' };
-  const seriesCount = editing && t.seriesId ? store.countSeries(t.seriesId, t.date) : 0;
+function kindSegHTML(kind) {
+  return `<div class="kind-seg" role="radiogroup" aria-label="종류">
+    ${['event', 'todo'].map((k) => `<button type="button" data-kind="${k}" class="${k === kind ? 'on' : ''}" role="radio" aria-checked="${k === kind}">${KIND_LABEL[k]}</button>`).join('')}
+  </div>`;
+}
 
-  openSheet(editing ? '할 일 수정' : '할 일 추가', `
+function bindKindSeg(root, onChange) {
+  const seg = $('.kind-seg', root);
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-kind]');
+    if (!b) return;
+    $$('[data-kind]', seg).forEach((x) => {
+      x.classList.toggle('on', x === b);
+      x.setAttribute('aria-checked', x === b);
+    });
+    onChange?.(b.dataset.kind);
+  });
+}
+
+const pickedKind = (root) => $('.kind-seg .on', root)?.dataset.kind || 'event';
+
+const PLACEHOLDER = { event: '일정 이름을 입력하세요', todo: '할 일을 입력하세요' };
+
+function openTaskSheet(task, dateStr, kind = 'event') {
+  const editing = !!task;
+  const t = task || { kind, title: '', date: dateStr || ymd(state.cursor), color: DEFAULT_COLOR, time: null, note: '' };
+  const seriesCount = editing && t.seriesId ? store.countSeries(t.seriesId, t.date) : 0;
+  const sheetTitle = (k) => `${KIND_LABEL[k]} ${editing ? '수정' : '추가'}`;
+
+  openSheet(sheetTitle(t.kind), `
     <form id="taskForm" autocomplete="off">
-      <input class="field big" name="title" placeholder="할 일을 입력하세요" value="${esc(t.title)}" required>
+      ${kindSegHTML(t.kind)}
+      <input class="field big" name="title" placeholder="${PLACEHOLDER[t.kind]}" value="${esc(t.title)}" required>
       <div class="row" style="margin-top:6px"><span>날짜</span><input type="date" name="date" value="${t.date}" required></div>
       ${timeToggleHTML(t.time)}
       <p class="field-label">색상</p>
@@ -341,17 +392,22 @@ function openTaskSheet(task, dateStr) {
       <p class="field-label">메모</p>
       <textarea class="field" name="note" rows="3" placeholder="메모 (선택)">${esc(t.note || '')}</textarea>
       <button class="btn primary" type="submit">${editing ? '저장' : '추가'}</button>
-      ${editing ? '<button class="btn danger" type="button" data-act="delete">이 할 일 삭제</button>' : ''}
+      ${editing ? '<button class="btn danger" type="button" data-act="delete">삭제</button>' : ''}
       ${seriesCount > 1 ? `<button class="btn soft" type="button" data-act="delete-series">이후 반복 일정 모두 삭제 (${seriesCount}개)</button>` : ''}
     </form>`, (sheet) => {
     const form = $('#taskForm', sheet);
     bindPalette(sheet);
     bindTimeToggle(sheet);
+    bindKindSeg(sheet, (k) => {
+      $('.sheet-head h3', sheet).textContent = sheetTitle(k);
+      form.title.placeholder = PLACEHOLDER[k];
+    });
     if (!editing) setTimeout(() => form.title.focus(), 280);
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const data = {
+        kind: pickedKind(sheet),
         title: form.title.value.trim(),
         date: form.date.value,
         color: pickedColor(sheet),
@@ -414,6 +470,7 @@ function openBulkSheet() {
 
   openSheet('반복 일정 한 번에 등록', `
     <p class="help">요일을 고르면 기간 동안의 날짜에 한꺼번에 등록돼요. 나중에 일정 하나를 눌러 <b>이후 반복 일정 모두 삭제</b>도 할 수 있어요.</p>
+    ${kindSegHTML('event')}
     <div class="row"><span>시작일</span><input type="date" id="bStart" value="${start}"></div>
     <div class="row"><span>종료일</span><input type="date" id="bEnd" value="${end}"></div>
     <div class="quick">
@@ -429,6 +486,7 @@ function openBulkSheet() {
     const startEl = $('#bStart', sheet);
     const endEl = $('#bEnd', sheet);
     let rowCount = 2;
+    bindKindSeg(sheet);
 
     const readRows = () => $$('[data-bulk-row]', sheet).map((row) => ({
       row,
@@ -489,9 +547,10 @@ function openBulkSheet() {
     $('#bSave', sheet).addEventListener('click', () => {
       const s = startEl.value;
       const e = endEl.value;
+      const kind = pickedKind(sheet);
       const items = readRows()
         .filter((r) => r.title && r.weekdays.length)
-        .flatMap((r) => expandWeekly({ title: r.title, weekdays: r.weekdays, start: s, end: e, color: r.color, time: r.time }));
+        .flatMap((r) => expandWeekly({ kind, title: r.title, weekdays: r.weekdays, start: s, end: e, color: r.color, time: r.time }));
       if (!items.length) return;
       store.add(items);
       closeSheet();
@@ -512,7 +571,7 @@ const IMPORT_EXAMPLE = `11월
 
 function openImportSheet() {
   openSheet('텍스트로 가져오기', `
-    <p class="help">사진 앱에서 이미지 글자를 길게 눌러 <b>모두 선택 → 복사</b>한 뒤 붙여넣으세요. "11월", "14일 (토) 제목", "11/14 제목" 같은 형식을 알아봐요.</p>
+    <p class="help">사진 앱에서 이미지 글자를 길게 눌러 <b>모두 선택 → 복사</b>한 뒤 붙여넣으세요. "11월", "14일 (토) 제목", "11/14 제목" 같은 형식을 알아봐요. 가져온 항목은 모두 <b>일정</b>으로 들어가요.</p>
     <textarea class="field" id="imText" rows="8" placeholder="${esc(IMPORT_EXAMPLE)}"></textarea>
     <button class="btn primary" type="button" id="imParse">정리하기</button>
     <div id="imResult"></div>`, (sheet) => {
@@ -570,6 +629,7 @@ function openImportSheet() {
             const it = items[Number(li.dataset.i)];
             const date = $('[data-pv-date]', li).value;
             return {
+              kind: 'event', // 텍스트로 가져온 항목은 모두 일정
               title: $('[data-pv-title]', li).value.trim(),
               date,
               color,

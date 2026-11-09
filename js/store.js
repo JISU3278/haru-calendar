@@ -34,6 +34,7 @@ export function uid() {
 function normalize(t) {
   return {
     id: t.id || uid(),
+    kind: t.kind === 'event' ? 'event' : 'todo', // 'event' 일정(보기만) / 'todo' 할 일(체크)
     date: t.date,
     title: String(t.title || '').trim() || '(제목 없음)',
     done: !!t.done,
@@ -46,8 +47,9 @@ function normalize(t) {
   };
 }
 
-// 시간 없는 할 일 먼저, 그다음 시간순
+// 일정 먼저, 그다음 할 일. 각각 시간 없는 것 먼저, 그다음 시간순
 function sortTasks(a, b) {
+  if (a.kind !== b.kind) return a.kind === 'event' ? -1 : 1;
   if (!a.time && b.time) return -1;
   if (a.time && !b.time) return 1;
   if (a.time && b.time && a.time !== b.time) return a.time < b.time ? -1 : 1;
