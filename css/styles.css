@@ -73,7 +73,8 @@ svg { display: block; }
 .cell {
   min-height: 78px; padding: 4px 2px 3px;
   display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  border-top: 1px solid var(--line); overflow: hidden; text-align: center;
+  border-top: 1px solid var(--line); text-align: center;
+  position: relative; min-width: 0;
 }
 .cell .num {
   align-self: center; width: 26px; height: 26px; line-height: 26px;
@@ -82,14 +83,19 @@ svg { display: block; }
 .cell.sun .num { color: var(--sun); }
 .cell.sat .num { color: var(--sat); }
 .cell.out { opacity: 0.35; }
+/* 선택한 날짜: 둥근 배경 + 위·아래 구분선을 그 칸 너비만큼 숨겨서 위아래 모양을 같게 */
 .cell.sel { background: var(--primary-soft); border-radius: 10px; border-top-color: transparent; }
+/* 바로 아래 칸(7칸 뒤)의 윗선 = 선택한 칸의 아래 선 */
+.cell.sel + .cell + .cell + .cell + .cell + .cell + .cell + .cell { border-top-color: transparent; }
 .cell.today .num { background: var(--primary); color: var(--primary-ink); font-weight: 800; }
 .lbl {
-  display: block; height: 16px; line-height: 16px; padding: 0 3px;
-  border-radius: 4px; font-size: 10.5px; font-weight: 500; text-align: left;
+  /* 칸 좌우 여백(2px)을 상쇄해서 칸 너비에 꽉 차는 직사각형 */
+  display: block; height: 16px; line-height: 16px; padding: 0 3px; margin: 0 -2px;
+  border-radius: 0; font-size: 10.5px; font-weight: 500; text-align: left;
   background: var(--ct); color: var(--text);
   white-space: nowrap; overflow: hidden;
 }
+.cell .num + .lbl { margin-top: 2px; } /* 날짜 숫자와 첫 일정 사이 */
 .lbl.todo { background: #fff; box-shadow: inset 0 0 0 1px var(--c); }
 .lbl.done { opacity: 0.45; text-decoration: line-through; }
 .more { font-size: 10px; color: var(--muted); line-height: 12px; }
