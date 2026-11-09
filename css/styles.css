@@ -207,7 +207,7 @@ svg { display: block; }
 .sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 8px auto 0; }
 .sheet-head { display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; padding: 6px 8px 6px; }
 .sheet-head h3 { margin: 0; text-align: center; font-size: 16px; font-weight: 800; }
-.link-btn { height: 40px; padding: 0 10px; font-size: 15px; color: var(--muted); font-weight: 600; text-align: left; }
+.link-btn { height: 40px; padding: 0 10px; font-size: 15px; color: var(--muted); font-weight: 600; text-align: right; }
 .sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 16px calc(24px + var(--safe-bottom)); }
 
 /* ───── 폼 ───── */

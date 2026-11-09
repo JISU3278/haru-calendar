@@ -251,9 +251,9 @@ function openSheet(title, bodyHTML, onMount) {
     <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
       <div class="sheet-grip"></div>
       <div class="sheet-head">
-        <button class="link-btn" type="button" data-close>닫기</button>
-        <h3>${esc(title)}</h3>
         <span></span>
+        <h3>${esc(title)}</h3>
+        <button class="link-btn" type="button" data-close>닫기</button>
       </div>
       <div class="sheet-body">${bodyHTML}</div>
     </div>`;
@@ -331,7 +331,7 @@ function openActionSheet() {
       </button>
       <button type="button" data-act="bulk">
         <span class="action-icon">🔁</span>
-        <span class="action-text"><strong>반복 일정 한 번에 등록</strong><small>예: 월·화 미술학원, 수·목·금 편의점 1년치</small></span>
+        <span class="action-text"><strong>반복 일정 등록하기</strong><small>예: 월·화 미술학원, 수·목·금 디자인 외주 1년치</small></span>
       </button>
       <button type="button" data-act="import">
         <span class="action-icon">📋</span>
@@ -440,9 +440,9 @@ function openTaskSheet(task, dateStr, kind = 'event') {
   });
 }
 
-/* ───────────────── 반복 일정 한 번에 등록 ───────────────── */
+/* ───────────────── 반복 일정 등록하기 ───────────────── */
 
-const BULK_PLACEHOLDERS = ['예: 미술학원', '예: 편의점', '예: 운동'];
+const BULK_PLACEHOLDERS = ['예: 미술학원', '예: 디자인 외주', '예: 운동'];
 const BULK_COLORS = ['#5B9CF2', '#7CC46A', '#F2668B', '#B57BE0', '#FF8A5B'];
 
 function bulkRowHTML(i) {
@@ -466,7 +466,7 @@ function openBulkSheet() {
   const start = ymd(today());
   const end = ymd(addDays(addYears(parseYmd(start), 1), -1));
 
-  openSheet('반복 일정 한 번에 등록', `
+  openSheet('반복 일정 등록하기', `
     <p class="help">요일을 고르면 기간 동안의 날짜에 한꺼번에 등록돼요. 나중에 일정 하나를 눌러 <b>이후 반복 일정 모두 삭제</b>도 할 수 있어요.</p>
     ${kindSegHTML('event')}
     <div class="row"><span>시작일</span><input type="date" id="bStart" value="${start}"></div>
