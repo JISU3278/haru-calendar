@@ -64,8 +64,9 @@ svg { display: block; }
 .nav { display: flex; gap: 2px; }
 
 /* ───── 월간 ───── */
-.month { padding: 6px 6px 0; }
-.wk-head { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 0 6px; }
+.month { padding: 0 6px; }
+/* 위 구분선과 아래 날짜 줄 구분선 사이 정중앙에 요일이 오도록 */
+.wk-head { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: center; height: 32px; text-align: center; font-size: 12px; line-height: 1; font-weight: 600; color: var(--muted); }
 .wk-head span:first-child { color: var(--sun); }
 .wk-head span:last-child { color: var(--sat); }
 .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
