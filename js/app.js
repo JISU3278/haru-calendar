@@ -699,5 +699,21 @@ function openSettingsSheet() {
 render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // 새 버전이 설치되어 이 화면을 넘겨받으면 한 번 새로고침해서 바로 새 버전으로 보여줌
+  const hadController = !!navigator.serviceWorker.controller;
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || refreshing) return;
+    refreshing = true;
+    location.reload();
+  });
+
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then((reg) => {
+      // 홈 화면 앱은 닫아도 백그라운드에 남아 있을 때가 많아서, 다시 볼 때마다 업데이트 확인
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    })
+    .catch(() => {});
 }
