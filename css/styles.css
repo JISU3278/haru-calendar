@@ -226,7 +226,7 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 
 .palette { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; padding: 8px 4px; justify-items: center; }
 .swatch { width: 100%; max-width: 34px; aspect-ratio: 1; border-radius: 50%; background: var(--c); display: grid; place-items: center; color: transparent; }
-.swatch.on { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--c); color: var(--ink); }
+.swatch.on { color: #fff; }
 
 .btn { display: block; width: 100%; height: 52px; margin-top: 14px; border-radius: 14px; font-size: 16px; font-weight: 800; }
 .btn.primary { background: var(--primary); color: var(--primary-ink); }
@@ -245,14 +245,18 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .action-text small { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
 
 /* 반복 일괄 등록 */
-.card { margin-top: 12px; padding: 12px; border: 1.5px solid var(--line); border-radius: 16px; }
+.card { margin-top: 12px; padding: 12px; border-radius: 16px; background: #F6F6F4; }
+/* 회색 카드 안의 입력칸·요일 버튼은 흰색으로 구분 */
+.card .field, .card .wd-chip, .card .row input[type="time"] { background: #fff; }
+.card .wd-chip.on { background: var(--primary); }
+.card .row { border-bottom-color: #E9E8E3; }
 .card-top { display: flex; gap: 8px; align-items: center; }
 .wd-chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; padding: 12px 0 4px; }
 .wd-chip { height: 38px; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--line); font-weight: 700; font-size: 14px; }
 .wd-chip.sun { color: var(--sun); }
 .wd-chip.sat { color: var(--sat); }
 .wd-chip.on { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
-.quick { display: flex; gap: 6px; padding: 10px 0 2px; }
+.quick { display: flex; gap: 6px; padding: 10px 0 2px; margin-bottom: 32px; }
 .quick button { flex: 1; height: 34px; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--line); font-size: 13px; font-weight: 700; }
 .quick button.on { border-color: var(--primary-strong); background: var(--primary-soft); color: var(--primary-ink); }
 .summary { margin: 14px 0 0; text-align: center; font-size: 14px; color: var(--muted); }

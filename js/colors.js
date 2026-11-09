@@ -31,5 +31,5 @@ export function inkOn(hex) {
 }
 
 export function colorVars(hex) {
-  return `--c:${hex};--ct:${tint(hex)};--cl:${tint(hex, 0.14)};--ink:${inkOn(hex)}`;
+  return `--c:${hex};--ct:${tint(hex)};--cl:${tint(hex, 0.08)};--ink:${inkOn(hex)}`;
 }
