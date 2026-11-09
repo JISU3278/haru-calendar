@@ -13,7 +13,11 @@ const types = {
 };
 
 createServer(async (req, res) => {
-  let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  const url = new URL(req.url, 'http://x');
+  // 느린 인터넷 흉내 (테스트용): ?__delay=5000 → 5초 늦게 응답
+  const delay = Number(url.searchParams.get('__delay')) || 0;
+  if (delay) await new Promise((r) => setTimeout(r, Math.min(delay, 30000)));
+  let path = decodeURIComponent(url.pathname);
   if (path.endsWith('/')) path += 'index.html';
   const file = normalize(join(root, path));
   if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
