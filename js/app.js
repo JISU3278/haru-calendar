@@ -52,13 +52,11 @@ const KIND_LABEL = { event: '일정', todo: '할 일' };
 function renderTaskItem(t) {
   const todo = isTodo(t);
   const badges = [];
-  if (t.time) badges.push(`<span class="badge time">${esc(t.time)}</span>`);
   if (t.dateUndecided) badges.push('<span class="badge warn">날짜 미정</span>');
-  if (t.seriesId) badges.push('<span class="badge">반복</span>');
   return `
     <li class="task ${todo ? 'todo' : 'event'} ${todo && t.done ? 'done' : ''}" data-id="${t.id}" style="${colorVars(t.color)}">
       <button class="task-body" type="button" data-action="edit">
-        <span class="t-title">${esc(t.title)}</span>
+        <span class="t-head"><span class="t-title">${esc(t.title)}</span>${t.time ? `<span class="badge time">${esc(t.time)}</span>` : ''}${t.seriesId ? '<span class="badge">반복</span>' : ''}</span>
         <span class="t-meta">${badges.join('')}</span>
         ${t.note ? `<span class="t-note">${esc(t.note)}</span>` : ''}
       </button>
