@@ -110,7 +110,7 @@ svg { display: block; }
 .panel { padding: 14px 16px calc(110px + var(--safe-bottom)); }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 0 12px; }
 .panel-head h2 { margin: 0; font-size: 17px; font-weight: 800; }
-.panel-head .count { font-size: 13px; color: var(--muted); }
+.section-label .count { font-size: 13px; font-weight: 400; color: var(--muted); }
 
 /* ───── 할 일 목록 ───── */
 .tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -178,7 +178,7 @@ svg { display: block; }
 /* ───── 일간 ───── */
 .dayview { padding: 14px 16px calc(110px + var(--safe-bottom)); }
 .dayview .panel-head h2 { font-size: 20px; }
-.section-label { margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.section-label { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
 
 /* ───── 추가 버튼 ───── */
 .fab {
@@ -298,3 +298,25 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
   transition: opacity 0.2s, transform 0.2s;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ───── 순서 편집 ───── */
+.panel-right { display: flex; align-items: baseline; gap: 12px; }
+.edit-btn { font-size: 14px; font-weight: 700; color: var(--muted); padding: 2px 0; }
+.edit-btn.on { color: var(--text); }
+.handle {
+  flex: none; width: 32px; height: 32px; margin: -4px -6px -4px 0;
+  display: grid; place-items: center; color: var(--muted);
+  touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.tasks.editing .task-body { pointer-events: none; }
+.task.dragging { z-index: 2; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14); background: var(--surface); }
+.task.dragging.event { background: #fff; background-image: linear-gradient(var(--cl), var(--cl)); }
+
+/* ───── 사진으로 가져오기 ───── */
+.im-gap { margin-top: 28px; }
+.pv-when { display: flex; gap: 6px; }
+.pv-main input[type="time"] { min-height: 34px; padding: 4px 8px; border: 1.5px solid var(--line); border-radius: 8px; background: #fff; }
+.im-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 28px 0; color: var(--muted); font-size: 14px; }
+.spinner { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--primary-strong); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.im-error { color: var(--danger); }

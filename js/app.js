@@ -3,6 +3,7 @@ import {
   WEEKDAYS, addDays, addMonths, addYears, daysInMonth, formatMD, formatYM,
   parseYmd, startOfWeek, today, ymd,
 } from './dates.js';
+import { getApiKey, readScheduleImage, setApiKey } from './ai.js';
 import { parseScheduleText } from './parser.js';
 import { countWeekly, expandWeekly } from './recurrence.js';
 import { store } from './store.js';
@@ -16,7 +17,9 @@ const VIEW_KEY = 'haru.view';
 const state = {
   view: readView(),
   cursor: today(), // 선택된 날짜
+  editing: null, // 순서 편집 중인 날짜 'YYYY-MM-DD' (null이면 편집 아님)
 };
+const isEditing = () => state.editing === ymd(state.cursor) && state.view !== 'week';
 
 function readView() {
   try {
@@ -27,6 +30,7 @@ function readView() {
   }
 }
 
+const HANDLE_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
 const CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 /* ───────────────── 렌더링 ───────────────── */
@@ -49,7 +53,7 @@ const isTodo = (t) => t.kind === 'todo';
 const KIND_LABEL = { event: '일정', todo: '할 일' };
 
 // 일정: 보기만 / 할 일: 오른쪽 끝에 완료 체크
-function renderTaskItem(t) {
+function renderTaskItem(t, editing = false) {
   const todo = isTodo(t);
   const badges = [];
   if (t.dateUndecided) badges.push('<span class="badge warn">날짜 미정</span>');
@@ -60,21 +64,35 @@ function renderTaskItem(t) {
         <span class="t-meta">${badges.join('')}</span>
         ${t.note ? `<span class="t-note">${esc(t.note)}</span>` : ''}
       </button>
-      ${todo ? `<button class="check" type="button" data-action="toggle" aria-label="${t.done ? '완료 취소' : '완료'}">${CHECK_SVG}</button>` : ''}
+      ${editing ? `<span class="handle" aria-label="끌어서 순서 바꾸기">${HANDLE_SVG}</span>` : ''}
+      ${todo && !editing ? `<button class="check" type="button" data-action="toggle" aria-label="${t.done ? '완료 취소' : '완료'}">${CHECK_SVG}</button>` : ''}
     </li>`;
 }
 
-function renderTaskList(list) {
-  return `<ul class="tasks">${list.map(renderTaskItem).join('')}</ul>`;
+function renderTaskList(list, editing = false) {
+  return `<ul class="tasks ${editing ? 'editing' : ''}">${list.map((t) => renderTaskItem(t, editing)).join('')}</ul>`;
 }
 
 // 하루 목록: 일정 / 할 일 두 묶음으로
 function renderSections(list) {
   const events = list.filter((t) => !isTodo(t));
   const todos = list.filter(isTodo);
+  const editing = isEditing();
   return `
-    ${events.length ? `<p class="section-label">일정</p>${renderTaskList(events)}` : ''}
-    ${todos.length ? `<p class="section-label">할 일</p>${renderTaskList(todos)}` : ''}`;
+    ${events.length ? `<p class="section-label">일정</p>${renderTaskList(events, editing)}` : ''}
+    ${todos.length ? `<p class="section-label">할 일<span class="count">${todoCount(list)}</span></p>${renderTaskList(todos, editing)}` : ''}`;
+}
+
+// 날짜 목록 머리: 날짜 · 완료 개수 · 편집 버튼(2개 이상일 때)
+function panelHead(d, list) {
+  const editing = isEditing();
+  return `
+      <div class="panel-head">
+        <h2>${formatMD(d)}</h2>
+        <div class="panel-right">
+          ${list.length > 1 ? `<button class="edit-btn ${editing ? 'on' : ''}" type="button" data-action="edit-order">${editing ? '완료' : '편집'}</button>` : ''}
+        </div>
+      </div>`;
 }
 
 function todoCount(list) {
@@ -83,6 +101,7 @@ function todoCount(list) {
 }
 
 function addButtons(ds) {
+  if (isEditing()) return '';
   return `
     <div class="add-row">
       <button class="add-inline" type="button" data-action="add" data-kind="event" data-for="${ds}">+ 일정</button>
@@ -132,10 +151,7 @@ function renderMonth() {
       <div class="grid">${cells}</div>
     </section>
     <section class="panel">
-      <div class="panel-head">
-        <h2>${formatMD(cursor)}</h2>
-        <span class="count">${todoCount(selList)}</span>
-      </div>
+      ${panelHead(cursor, selList)}
       ${selList.length ? renderSections(selList) : '<p class="empty">일정과 할 일이 없어요</p>'}
       ${addButtons(selStr)}
     </section>`;
@@ -171,10 +187,7 @@ function renderDay() {
   const list = store.byDate(ds);
   return `
     <section class="dayview">
-      <div class="panel-head">
-        <h2>${formatMD(state.cursor)}</h2>
-        <span class="count">${todoCount(list)}</span>
-      </div>
+      ${panelHead(state.cursor, list)}
       ${list.length ? renderSections(list) : '<p class="empty">일정과 할 일이 없어요</p>'}
       ${addButtons(ds)}
     </section>`;
@@ -207,6 +220,13 @@ $('#fab').addEventListener('click', openActionSheet);
 $('#main').addEventListener('click', (e) => {
   const el = e.target.closest('[data-action], [data-date], [data-goto-day]');
   if (!el) return;
+  if (el.dataset.action === 'edit-order') {
+    state.editing = isEditing() ? null : ymd(state.cursor);
+    render();
+    return;
+  }
+  // 순서 편집 중에는 카드 눌러 수정·체크하지 않음
+  if (isEditing() && (el.dataset.action === 'edit' || el.dataset.action === 'toggle')) return;
   if (el.dataset.action === 'toggle') {
     const id = el.closest('[data-id]').dataset.id;
     const t = store.get(id);
@@ -236,8 +256,51 @@ $('#main').addEventListener('touchend', (e) => {
   const dx = t.clientX - touchStart.x;
   const dy = t.clientY - touchStart.y;
   touchStart = null;
+  if (isEditing()) return; // 편집 중에는 좌우로 넘기지 않음
   if (Math.abs(dx) > 60 && Math.abs(dy) < 50) step(dx < 0 ? 1 : -1);
 }, { passive: true });
+
+// 순서 편집: 손잡이(≡)를 잡고 위아래로 끌기 — 같은 묶음(일정/할 일) 안에서만
+$('#main').addEventListener('pointerdown', (e) => {
+  const handle = e.target.closest('.handle');
+  if (!handle) return;
+  e.preventDefault();
+  const li = handle.closest('.task');
+  const ul = li.parentElement;
+  const grab = e.clientY - li.getBoundingClientRect().top; // 카드 안에서 잡은 위치
+  let offset = 0;
+  li.classList.add('dragging');
+  handle.setPointerCapture(e.pointerId);
+
+  const move = (ev) => {
+    const want = ev.clientY - grab; // 카드 윗변이 있어야 할 위치
+    const center = want + li.offsetHeight / 2;
+    const prev = li.previousElementSibling;
+    const next = li.nextElementSibling;
+    if (prev) {
+      const r = prev.getBoundingClientRect();
+      if (center < r.top + r.height / 2) ul.insertBefore(li, prev);
+    }
+    if (next) {
+      const r = next.getBoundingClientRect();
+      if (center > r.top + r.height / 2) ul.insertBefore(next, li);
+    }
+    const natural = li.getBoundingClientRect().top - offset; // 끌기 전 원래 자리
+    offset = want - natural;
+    li.style.transform = `translateY(${offset}px)`;
+  };
+  const end = () => {
+    handle.removeEventListener('pointermove', move);
+    handle.removeEventListener('pointerup', end);
+    handle.removeEventListener('pointercancel', end);
+    li.classList.remove('dragging');
+    li.style.transform = '';
+    store.reorder($$('.task', ul).map((x) => x.dataset.id));
+  };
+  handle.addEventListener('pointermove', move);
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+});
 
 store.subscribe(render);
 
@@ -335,7 +398,7 @@ function openActionSheet() {
       </button>
       <button type="button" data-act="import">
         <span class="action-icon">📋</span>
-        <span class="action-text"><strong>텍스트로 가져오기</strong><small>복사한 스케줄을 붙여넣으면 날짜별로 정리</small></span>
+        <span class="action-text"><strong>사진·텍스트로 가져오기</strong><small>스케줄 사진이나 복사한 글을 날짜별로 정리</small></span>
       </button>
     </div>`, (sheet) => {
     sheet.addEventListener('click', (e) => {
@@ -559,7 +622,7 @@ function openBulkSheet() {
   });
 }
 
-/* ───────────────── 텍스트로 가져오기 ───────────────── */
+/* ───────────────── 사진·텍스트로 가져오기 ───────────────── */
 
 const IMPORT_EXAMPLE = `11월
 • 14일 (토) MMA 📍고척돔
@@ -568,14 +631,22 @@ const IMPORT_EXAMPLE = `11월
 • 3일 (목) 에터뷰 시즌2 3화`;
 
 function openImportSheet() {
-  openSheet('텍스트로 가져오기', `
-    <p class="help">사진 앱에서 이미지 글자를 길게 눌러 <b>모두 선택 → 복사</b>한 뒤 붙여넣으세요. "11월", "14일 (토) 제목", "11/14 제목" 같은 형식을 알아봐요. 가져온 항목은 모두 <b>일정</b>으로 들어가요.</p>
-    <textarea class="field" id="imText" rows="8" placeholder="${esc(IMPORT_EXAMPLE)}"></textarea>
-    <button class="btn primary" type="button" id="imParse">정리하기</button>
+  openSheet('사진·텍스트로 가져오기', `
+    <p class="field-label">사진으로</p>
+    <p class="help">스케줄 사진을 고르면 Claude가 읽어서 날짜별로 정리해요. ${getApiKey() ? '' : '<b>설정에서 API 키를 먼저 넣어 주세요.</b>'}</p>
+    <button class="btn primary" type="button" id="imPhoto">사진 고르기</button>
+    <input type="file" id="imFile" accept="image/*" hidden>
+    <p class="field-label im-gap">텍스트로</p>
+    <p class="help">사진 앱에서 이미지 글자를 길게 눌러 <b>모두 선택 → 복사</b>한 뒤 붙여넣으세요. "11월", "14일 (토) 제목", "11/14 제목" 같은 형식을 알아봐요.</p>
+    <textarea class="field" id="imText" rows="6" placeholder="${esc(IMPORT_EXAMPLE)}"></textarea>
+    <button class="btn soft" type="button" id="imParse">텍스트 정리하기</button>
     <div id="imResult"></div>`, (sheet) => {
     const textEl = $('#imText', sheet);
+    const fileEl = $('#imFile', sheet);
     const resultEl = $('#imResult', sheet);
     let items = [];
+    let lastFile = null;
+    let busy = false;
 
     const refreshSaveBtn = () => {
       const n = $$('.pv input[type="checkbox"]:checked', resultEl).length;
@@ -592,12 +663,13 @@ function openImportSheet() {
       }
     });
 
-    $('#imParse', sheet).addEventListener('click', () => {
-      items = parseScheduleText(textEl.value);
-      if (!items.length) {
-        resultEl.innerHTML = '<p class="empty">날짜를 찾지 못했어요. "11월", "14일 (토) 제목" 같은 형식인지 확인해 주세요.</p>';
-        return;
-      }
+    const showMessage = (html) => {
+      resultEl.innerHTML = html;
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    // 찾은 항목 미리보기 (fromPhoto면 'Opus로 다시 읽기' 버튼도)
+    const showPreview = (fromPhoto, usedStrong) => {
       const warnCount = items.filter((it) => it.reasons.length).length;
       resultEl.innerHTML = `
         <p class="field-label">색상 (전체)</p>
@@ -608,16 +680,21 @@ function openImportSheet() {
             <li class="pv ${it.reasons.length ? 'warn' : ''}" data-i="${i}">
               <input type="checkbox" checked aria-label="저장할 항목">
               <div class="pv-main">
-                <input type="date" value="${it.date}" data-pv-date>
+                <div class="pv-when">
+                  <input type="date" value="${it.date}" data-pv-date>
+                  ${it.time ? `<input type="time" value="${it.time}" data-pv-time>` : ''}
+                </div>
                 <input class="field" value="${esc(it.title)}" data-pv-title>
                 ${it.reasons.map((r) => `<p class="warn-text">⚠︎ ${esc(r)}</p>`).join('')}
               </div>
             </li>`).join('')}
         </ul>
-        <button class="btn primary" type="button" id="imSave"></button>`;
+        <button class="btn primary" type="button" id="imSave"></button>
+        ${fromPhoto && !usedStrong ? '<button class="btn soft" type="button" id="imRetry">결과가 이상하면: 더 정확한 모델(Opus)로 다시 읽기</button>' : ''}`;
       bindPalette(resultEl);
       refreshSaveBtn();
       resultEl.querySelector('.field-label').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('#imRetry', resultEl)?.addEventListener('click', () => readPhoto(lastFile, true));
 
       $('#imSave', resultEl).addEventListener('click', () => {
         const color = pickedColor(resultEl);
@@ -626,10 +703,12 @@ function openImportSheet() {
           .map((li) => {
             const it = items[Number(li.dataset.i)];
             const date = $('[data-pv-date]', li).value;
+            const timeEl = $('[data-pv-time]', li);
             return {
-              kind: 'event', // 텍스트로 가져온 항목은 모두 일정
+              kind: 'event', // 가져온 항목은 모두 일정
               title: $('[data-pv-title]', li).value.trim(),
               date,
+              time: timeEl && timeEl.value ? timeEl.value : null,
               color,
               dateUndecided: it.dateUndecided && date === it.date,
             };
@@ -642,6 +721,48 @@ function openImportSheet() {
         render();
         toast(`${toSave.length}개 저장했어요`);
       });
+    };
+
+    const readPhoto = async (file, strong = false) => {
+      if (!file || busy) return;
+      busy = true;
+      lastFile = file;
+      showMessage(`<div class="im-loading"><span class="spinner"></span>${strong ? 'Opus로 다시 읽는 중… (조금 더 걸려요)' : '사진을 읽는 중…'}</div>`);
+      try {
+        items = await readScheduleImage(file, { strong });
+        if (!items.length) {
+          showMessage(`<p class="empty">사진에서 일정을 찾지 못했어요.</p>${strong ? '' : '<button class="btn soft" type="button" id="imRetry">더 정확한 모델(Opus)로 다시 읽기</button>'}`);
+          $('#imRetry', resultEl)?.addEventListener('click', () => readPhoto(lastFile, true));
+        } else {
+          showPreview(true, strong);
+        }
+      } catch (err) {
+        showMessage(`<p class="empty im-error">${esc(err.message)}</p>`);
+      } finally {
+        busy = false;
+      }
+    };
+
+    $('#imPhoto', sheet).addEventListener('click', () => {
+      if (!getApiKey()) {
+        toast('설정에서 API 키를 먼저 넣어 주세요');
+        return;
+      }
+      fileEl.click();
+    });
+    fileEl.addEventListener('change', () => {
+      const f = fileEl.files[0];
+      fileEl.value = '';
+      readPhoto(f);
+    });
+
+    $('#imParse', sheet).addEventListener('click', () => {
+      items = parseScheduleText(textEl.value).map((it) => ({ ...it, time: null }));
+      if (!items.length) {
+        showMessage('<p class="empty">날짜를 찾지 못했어요. "11월", "14일 (토) 제목" 같은 형식인지 확인해 주세요.</p>');
+        return;
+      }
+      showPreview(false);
     });
   });
 }
@@ -649,12 +770,35 @@ function openImportSheet() {
 /* ───────────────── 설정: 백업 ───────────────── */
 
 function openSettingsSheet() {
+  const hasKey = !!getApiKey();
   openSheet('설정', `
-    <p class="field-label">백업</p>
+    <p class="field-label">사진 읽기 (Claude API 키)</p>
+    <p class="help">키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. ${hasKey ? '<b>저장된 키가 있어요.</b>' : ''}</p>
+    <input class="field" id="apiKeyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${hasKey ? '새 키로 바꾸려면 붙여넣기' : 'sk-ant-로 시작하는 키 붙여넣기'}">
+    <button class="btn primary" type="button" id="apiKeySave">키 저장</button>
+    ${hasKey ? '<button class="btn danger" type="button" id="apiKeyDelete">저장된 키 지우기</button>' : ''}
+    <p class="field-label im-gap">백업</p>
     <p class="help">할 일은 이 기기의 브라우저에만 저장돼요. 가끔 백업 파일을 내보내 두면 앱을 옮기거나 데이터가 지워졌을 때 되살릴 수 있어요.</p>
     <button class="btn primary" type="button" id="exportBtn">백업 파일 내보내기</button>
     <button class="btn soft" type="button" id="importBtn">백업 파일 불러오기</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>`, (sheet) => {
+    $('#apiKeySave', sheet).addEventListener('click', () => {
+      const v = $('#apiKeyInput', sheet).value.trim();
+      if (!v.startsWith('sk-ant-')) {
+        toast('sk-ant-로 시작하는 키를 넣어 주세요');
+        return;
+      }
+      setApiKey(v);
+      closeSheet();
+      toast('API 키를 저장했어요');
+    });
+    $('#apiKeyDelete', sheet)?.addEventListener('click', () => {
+      if (!confirm('저장된 API 키를 지울까요?')) return;
+      setApiKey('');
+      closeSheet();
+      toast('API 키를 지웠어요');
+    });
+
     $('#exportBtn', sheet).addEventListener('click', async () => {
       const name = `haru-backup-${ymd(today())}.json`;
       const blob = new Blob([store.exportJSON()], { type: 'application/json' });

@@ -44,16 +44,16 @@ function normalize(t) {
     seriesId: t.seriesId || null, // 반복 일괄 등록으로 만든 묶음
     dateUndecided: !!t.dateUndecided, // "3월 중"처럼 날짜 미정
     createdAt: t.createdAt || Date.now(),
+    order: Number.isFinite(t.order) ? t.order : null, // 직접 정한 순서 (null이면 등록 순)
   };
 }
 
-// 일정 먼저, 그다음 할 일. 각각 시간 없는 것 먼저, 그다음 시간순
+// 일정 먼저, 그다음 할 일. 각각 직접 정한 순서 → 등록한 순서
+// (직접 정한 순서는 0,1,2… 작은 수라서, 나중에 추가한 항목(등록 시각)은 맨 아래로 감)
+const orderKey = (t) => (t.order ?? t.createdAt);
 function sortTasks(a, b) {
   if (a.kind !== b.kind) return a.kind === 'event' ? -1 : 1;
-  if (!a.time && b.time) return -1;
-  if (a.time && !b.time) return 1;
-  if (a.time && b.time && a.time !== b.time) return a.time < b.time ? -1 : 1;
-  return a.createdAt - b.createdAt;
+  return orderKey(a) - orderKey(b) || a.createdAt - b.createdAt;
 }
 
 export const store = {
@@ -91,7 +91,21 @@ export const store = {
   update(id, patch) {
     const t = load().find((x) => x.id === id);
     if (!t) return;
+    // 다른 날짜로 옮기거나 일정↔할 일을 바꾸면 그쪽 목록의 맨 아래로
+    if ((patch.date && patch.date !== t.date) || (patch.kind && patch.kind !== t.kind)) {
+      t.order = null;
+      t.createdAt = Date.now();
+    }
     Object.assign(t, patch);
+    save();
+  },
+
+  // 목록에서 끌어서 바꾼 순서 저장: ids 순서대로 0,1,2…
+  reorder(ids) {
+    ids.forEach((id, i) => {
+      const t = load().find((x) => x.id === id);
+      if (t) t.order = i;
+    });
     save();
   },
 
