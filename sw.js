@@ -2,7 +2,7 @@
 // - 온라인: 항상 서버에 최신인지 확인하고 받음 (GitHub Pages의 10분 브라우저 캐시를 쓰지 않음)
 // - 오프라인: 저장해 둔 파일 사용
 // 앱 파일을 바꿔서 올릴 때는 CACHE 버전 숫자를 올려 주세요.
-const CACHE = 'haru-v11';
+const CACHE = 'haru-v12';
 const ASSETS = [
   './', './index.html', './css/styles.css', './manifest.webmanifest',
   './js/app.js', './js/store.js', './js/dates.js', './js/parser.js', './js/colors.js', './js/recurrence.js', './js/ai.js',

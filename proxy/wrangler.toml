@@ -1,0 +1,18 @@
+# 하루 캘린더 중계 서버 설정
+# 올리기: npx wrangler@4.153.0 deploy   (proxy 폴더에서)
+name = "haru-proxy"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://jisu3278.github.io,http://localhost:5180"
+FAST_MODEL = "claude-haiku-5-5"
+STRONG_MODEL = "claude-opus-5-5"
+# 하루 횟수 제한 — 숫자만 바꾸고 다시 올리면 됩니다
+DAILY_LIMIT_PER_DEVICE = "30"         # 1인(기기)당 사진 읽기
+DAILY_LIMIT_STRONG_PER_DEVICE = "5"   # 1인당 Opus 다시 읽기
+DAILY_LIMIT_TOTAL = "300"             # 모든 사람 합계 (안전장치)
+
+[[kv_namespaces]]
+binding = "RATE"
+id = "9a9a48f04edd4defaaac234c5b58ffea"

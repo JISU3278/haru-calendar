@@ -3,7 +3,9 @@ import {
   WEEKDAYS, addDays, addMonths, addYears, daysInMonth, formatMD, formatYM,
   parseYmd, startOfWeek, today, ymd,
 } from './dates.js';
-import { getApiKey, readScheduleImage, setApiKey } from './ai.js';
+import {
+  PROXY_URL, canReadPhotos, getApiKey, getInvite, readScheduleImage, setApiKey, setInvite,
+} from './ai.js';
 import { parseScheduleText } from './parser.js';
 import { countWeekly, expandWeekly } from './recurrence.js';
 import { store } from './store.js';
@@ -633,7 +635,7 @@ const IMPORT_EXAMPLE = `11월
 function openImportSheet() {
   openSheet('사진·텍스트로 가져오기', `
     <p class="field-label">사진으로</p>
-    <p class="help">스케줄 사진을 고르면 Claude가 읽어서 날짜별로 정리해요. ${getApiKey() ? '' : '<b>설정에서 API 키를 먼저 넣어 주세요.</b>'}</p>
+    <p class="help">스케줄 사진을 고르면 Claude가 읽어서 날짜별로 정리해요. ${canReadPhotos() ? '' : '<b>설정에서 초대 코드를 먼저 넣어 주세요.</b>'}</p>
     <button class="btn primary" type="button" id="imPhoto">사진 고르기</button>
     <input type="file" id="imFile" accept="image/*" hidden>
     <p class="field-label im-gap">텍스트로</p>
@@ -744,8 +746,8 @@ function openImportSheet() {
     };
 
     $('#imPhoto', sheet).addEventListener('click', () => {
-      if (!getApiKey()) {
-        toast('설정에서 API 키를 먼저 넣어 주세요');
+      if (!canReadPhotos()) {
+        toast('설정에서 초대 코드를 먼저 넣어 주세요');
         return;
       }
       fileEl.click();
@@ -771,17 +773,32 @@ function openImportSheet() {
 
 function openSettingsSheet() {
   const hasKey = !!getApiKey();
+  const invite = getInvite();
   openSheet('설정', `
+    ${PROXY_URL ? `
+    <p class="field-label">사진 읽기 (초대 코드)</p>
+    <p class="help">앱을 알려준 사람에게 받은 초대 코드를 넣으면 사진으로 일정을 가져올 수 있어요. ${invite ? '<b>초대 코드가 저장돼 있어요.</b>' : ''}</p>
+    <input class="field" id="inviteInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="초대 코드" value="${esc(invite)}">
+    <button class="btn primary" type="button" id="inviteSave">초대 코드 저장</button>
+    <details class="key-more" ${hasKey ? 'open' : ''}>
+      <summary>내 Claude API 키로 쓰기</summary>` : ''}
     <p class="field-label">사진 읽기 (Claude API 키)</p>
     <p class="help">키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. ${hasKey ? '<b>저장된 키가 있어요.</b>' : ''}</p>
     <input class="field" id="apiKeyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${hasKey ? '새 키로 바꾸려면 붙여넣기' : 'sk-ant-로 시작하는 키 붙여넣기'}">
     <button class="btn primary" type="button" id="apiKeySave">키 저장</button>
     ${hasKey ? '<button class="btn danger" type="button" id="apiKeyDelete">저장된 키 지우기</button>' : ''}
+    ${PROXY_URL ? '</details>' : ''}
     <p class="field-label im-gap">백업</p>
     <p class="help">할 일은 이 기기의 브라우저에만 저장돼요. 가끔 백업 파일을 내보내 두면 앱을 옮기거나 데이터가 지워졌을 때 되살릴 수 있어요.</p>
     <button class="btn primary" type="button" id="exportBtn">백업 파일 내보내기</button>
     <button class="btn soft" type="button" id="importBtn">백업 파일 불러오기</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>`, (sheet) => {
+    $('#inviteSave', sheet)?.addEventListener('click', () => {
+      const v = $('#inviteInput', sheet).value.trim();
+      setInvite(v);
+      closeSheet();
+      toast(v ? '초대 코드를 저장했어요' : '초대 코드를 지웠어요');
+    });
     $('#apiKeySave', sheet).addEventListener('click', () => {
       const v = $('#apiKeyInput', sheet).value.trim();
       if (!v.startsWith('sk-ant-')) {

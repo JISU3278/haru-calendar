@@ -4,6 +4,10 @@
 import { ymd } from './dates.js';
 
 const KEY_STORAGE = 'haru.apiKey';
+const INVITE_STORAGE = 'haru.invite';
+const DEVICE_STORAGE = 'haru.deviceId';
+// 초대 코드로 쓸 때 거치는 중계 서버 (proxy 폴더). 키는 서버에만 있음
+export const PROXY_URL = 'https://haru-proxy.jisu3278.workers.dev';
 // 공식 SDK를 필요할 때만 불러옴 (앱 첫 화면은 인터넷 없이도 열리도록)
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.4.0/+esm';
 
@@ -20,6 +24,31 @@ export function setApiKey(key) {
     if (key) localStorage.setItem(KEY_STORAGE, key);
     else localStorage.removeItem(KEY_STORAGE);
   } catch { /* 저장 실패는 무시 */ }
+}
+
+export function getInvite() {
+  try { return localStorage.getItem(INVITE_STORAGE) || ''; } catch { return ''; }
+}
+export function setInvite(code) {
+  try {
+    if (code) localStorage.setItem(INVITE_STORAGE, code);
+    else localStorage.removeItem(INVITE_STORAGE);
+  } catch { /* 저장 실패는 무시 */ }
+}
+// 사진 읽기를 쓸 수 있는 상태인지 (내 키 또는 초대 코드)
+export const canReadPhotos = () => !!getApiKey() || !!(PROXY_URL && getInvite());
+
+function deviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_STORAGE);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_STORAGE, id);
+    }
+    return id;
+  } catch {
+    return 'no-storage-device';
+  }
 }
 
 let sdkPromise = null;
@@ -96,13 +125,24 @@ const VALID_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 // 사진 → [{date, title, time, dateUndecided, reasons}]
 export async function readScheduleImage(file, { strong = false } = {}) {
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error('설정에서 Claude API 키를 먼저 넣어 주세요.');
+  const invite = getInvite();
+  if (!apiKey && !(PROXY_URL && invite)) throw new Error('설정에서 초대 코드나 API 키를 먼저 넣어 주세요.');
 
   const [Anthropic, data] = await Promise.all([
     loadSdk().catch(() => { throw new Error('인터넷에 연결되어 있는지 확인해 주세요.'); }),
     imageToBase64(file),
   ]);
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 1 });
+  const client = apiKey
+    // 내 키: Claude API로 바로
+    ? new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 1 })
+    // 초대 코드: 중계 서버가 키를 붙여서 전달
+    : new Anthropic({
+      apiKey: 'via-proxy',
+      baseURL: PROXY_URL,
+      dangerouslyAllowBrowser: true,
+      maxRetries: 1,
+      defaultHeaders: { 'x-haru-invite': invite, 'x-haru-device': deviceId() },
+    });
 
   const params = {
     model: strong ? MODELS.strong : MODELS.fast,
@@ -124,7 +164,7 @@ export async function readScheduleImage(file, { strong = false } = {}) {
       ? await client.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
       : await client.messages.create(params);
   } catch (err) {
-    throw new Error(explainError(Anthropic, err));
+    throw new Error(explainError(Anthropic, err, !apiKey));
   }
 
   if (res.stop_reason === 'refusal') throw new Error('이 사진은 읽지 못했어요. 다른 사진으로 해 주세요.');
@@ -146,7 +186,11 @@ export async function readScheduleImage(file, { strong = false } = {}) {
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-function explainError(Anthropic, err) {
+function explainError(Anthropic, err, viaProxy) {
+  // 중계 서버가 보낸 안내(초대 코드·횟수 제한)는 그대로 보여줌
+  const serverMsg = err?.error?.error?.message;
+  if (viaProxy && (err instanceof Anthropic.PermissionDeniedError || err instanceof Anthropic.RateLimitError) && serverMsg) return serverMsg;
+  if (viaProxy && err instanceof Anthropic.AuthenticationError) return '중계 서버 설정에 문제가 있어요. 앱을 알려준 사람에게 말해 주세요.';
   if (err instanceof Anthropic.AuthenticationError) return 'API 키가 맞지 않아요. 설정에서 키를 확인해 주세요.';
   if (err instanceof Anthropic.PermissionDeniedError) return '이 API 키로는 사용할 수 없어요. 콘솔에서 키 권한을 확인해 주세요.';
   if (err instanceof Anthropic.RateLimitError) return '요청이 많아요. 잠시 뒤 다시 해 주세요.';
