@@ -1,4 +1,6 @@
-import { COLORS, DEFAULT_COLOR, colorVars } from './colors.js';
+import {
+  COLORS, DEFAULT_COLOR, DEFAULT_THEME, colorVars, themeVars,
+} from './colors.js';
 import {
   WEEKDAYS, addDays, addMonths, addYears, daysInMonth, formatMD, formatYM,
   parseYmd, startOfWeek, today, ymd,
@@ -16,6 +18,49 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const VIEW_KEY = 'haru.view';
+const THEME_KEY = 'haru.theme';
+const GRAY_KEY = 'haru.gray';
+const GRAYS = { cool: '쿨톤', neutral: '뉴트럴', warm: '웜톤' };
+
+// 회색 톤 (기본: 웜톤)
+function readGray() {
+  try {
+    const v = localStorage.getItem(GRAY_KEY);
+    return v in GRAYS ? v : 'warm';
+  } catch {
+    return 'warm';
+  }
+}
+function applyGray(g) {
+  if (g === 'warm') document.documentElement.removeAttribute('data-gray');
+  else document.documentElement.setAttribute('data-gray', g);
+}
+applyGray(readGray());
+
+// 테마색 적용 (설정에서 고른 색, 없으면 기본 노랑)
+function readTheme() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return /^#[0-9a-f]{6}$/i.test(v || '') ? v : DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+function applyTheme(hex) {
+  const isDefault = hex.toUpperCase() === DEFAULT_THEME.toUpperCase();
+  for (const [k, v] of Object.entries(themeVars(hex))) {
+    // 기본 노랑은 styles.css에 맞춰 둔 원래 값을 그대로 씀
+    if (isDefault) document.documentElement.style.removeProperty(k);
+    else document.documentElement.style.setProperty(k, v);
+  }
+}
+function saveTheme(hex) {
+  try {
+    if (hex.toUpperCase() === DEFAULT_THEME.toUpperCase()) localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, hex);
+  } catch { /* 저장 실패는 무시 */ }
+}
+applyTheme(readTheme());
 const state = {
   view: readView(),
   cursor: today(), // 선택된 날짜
@@ -788,11 +833,46 @@ function openSettingsSheet() {
     <button class="btn primary" type="button" id="apiKeySave">키 저장</button>
     ${hasKey ? '<button class="btn danger" type="button" id="apiKeyDelete">저장된 키 지우기</button>' : ''}
     ${PROXY_URL ? '</details>' : ''}
+    <p class="field-label im-gap">테마색</p>
+    <div class="theme-row">
+      <label class="theme-pick">
+        <input type="color" id="themeInput" value="${readTheme()}">
+        <span>색 고르기</span>
+      </label>
+      <button class="btn soft theme-reset" type="button" id="themeReset">기본색으로</button>
+    </div>
+    <p class="field-label im-gap">회색</p>
+    <div class="kind-seg gray-seg" role="radiogroup" aria-label="회색">
+      ${Object.entries(GRAYS).map(([g, label]) => `<button type="button" data-gray="${g}" class="${g === readGray() ? 'on' : ''}" role="radio" aria-checked="${g === readGray()}">${label}</button>`).join('')}
+    </div>
     <p class="field-label im-gap">백업</p>
     <p class="help">할 일은 이 기기의 브라우저에만 저장돼요. 가끔 백업 파일을 내보내 두면 앱을 옮기거나 데이터가 지워졌을 때 되살릴 수 있어요.</p>
     <button class="btn primary" type="button" id="exportBtn">백업 파일 내보내기</button>
     <button class="btn soft" type="button" id="importBtn">백업 파일 불러오기</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>`, (sheet) => {
+    $('.gray-seg', sheet).addEventListener('click', (e) => {
+      const b = e.target.closest('[data-gray]');
+      if (!b) return;
+      const g = b.dataset.gray;
+      applyGray(g);
+      try {
+        if (g === 'warm') localStorage.removeItem(GRAY_KEY);
+        else localStorage.setItem(GRAY_KEY, g);
+      } catch { /* 저장 실패는 무시 */ }
+      $$('.gray-seg button', sheet).forEach((x) => {
+        x.classList.toggle('on', x === b);
+        x.setAttribute('aria-checked', x === b);
+      });
+    });
+    const themeEl = $('#themeInput', sheet);
+    themeEl.addEventListener('input', () => applyTheme(themeEl.value)); // 고르는 동안 바로 보기
+    themeEl.addEventListener('change', () => { applyTheme(themeEl.value); saveTheme(themeEl.value); });
+    $('#themeReset', sheet).addEventListener('click', () => {
+      themeEl.value = DEFAULT_THEME.toLowerCase();
+      applyTheme(DEFAULT_THEME);
+      saveTheme(DEFAULT_THEME);
+      toast('기본색으로 바꿨어요');
+    });
     $('#inviteSave', sheet)?.addEventListener('click', () => {
       const v = $('#inviteInput', sheet).value.trim();
       setInvite(v);
