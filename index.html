@@ -22,7 +22,6 @@
         <div class="seg" role="tablist" aria-label="보기">
           <button type="button" data-view="month" role="tab">월간</button>
           <button type="button" data-view="week" role="tab">주간</button>
-          <button type="button" data-view="day" role="tab">일간</button>
         </div>
         <div class="top-actions">
           <button id="todayBtn" class="chip" type="button">오늘</button>
@@ -33,14 +32,9 @@
       </div>
       <div class="toolbar">
         <h1 id="title" class="title"></h1>
-        <div class="nav">
-          <button id="prevBtn" class="icon-btn" type="button" aria-label="이전">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          </button>
-          <button id="nextBtn" class="icon-btn" type="button" aria-label="다음">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-          </button>
-        </div>
+        <button id="shareBtn" class="icon-btn share-btn" type="button" aria-label="이번 달 일정 공유">
+          <span class="share-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6L12 3L9 6M12 3V13M7 10C6.068 10 5.602 10 5.235 10.152C4.99218 10.2525 4.77155 10.3999 4.58572 10.5857C4.3999 10.7716 4.25251 10.9922 4.152 11.235C4 11.602 4 12.068 4 13V17.8C4 18.92 4 19.48 4.218 19.908C4.40974 20.2843 4.71569 20.5903 5.092 20.782C5.519 21 6.079 21 7.197 21H16.804C17.922 21 18.481 21 18.908 20.782C19.284 20.59 19.59 20.284 19.782 19.908C20 19.48 20 18.921 20 17.803V13C20 12.068 20 11.602 19.848 11.235C19.7475 10.9922 19.6001 10.7716 19.4143 10.5857C19.2284 10.3999 19.0078 10.2525 18.765 10.152C18.398 10 17.932 10 17 10"/></svg>공유</span>
+        </button>
       </div>
     </header>
 

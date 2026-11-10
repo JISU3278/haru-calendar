@@ -97,11 +97,10 @@ svg { display: block; }
 .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: var(--text); }
 .icon-btn:active { background: var(--surface); }
 
-.toolbar { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 38px; margin-top: 20px; }
 .seg { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
 .seg button { min-width: 58px; height: 28px; border-radius: 9px; font-size: 14px; font-weight: 700; color: var(--muted); }
 .seg button.on { background: var(--primary); color: var(--primary-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
-.nav { display: flex; gap: 2px; }
 
 /* ───── 월간 ───── */
 .month { padding: 0 6px; }
@@ -216,8 +215,6 @@ svg { display: block; }
 .wday-empty { display: block; width: 100%; text-align: left; padding: 10px 0; color: var(--faint); font-size: 14px; }
 
 /* ───── 일간 ───── */
-.dayview { padding: 14px 16px calc(110px + var(--safe-bottom)); }
-.dayview .panel-head h2 { font-size: 20px; }
 .section-label { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
 
 /* ───── 추가 버튼 ───── */
@@ -371,3 +368,22 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .theme-pick input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
 .theme-row .theme-reset { flex: none; width: auto; height: 52px; margin: 0; padding: 0 16px; }
 .gray-seg { grid-template-columns: repeat(3, 1fr); margin: 0; }
+
+/* ───── 이번 달 일정 공유 ───── */
+/* 공유 버튼: 제목 줄 오른쪽 (월간 보기에서만) */
+.share-btn { width: auto; height: 32px; padding: 0 0 0 6px; display: flex; align-items: center; gap: 3px; color: var(--muted); }
+/* 버튼 터치 영역은 그대로, 안쪽 글자만 작은 회색 칩 모양 */
+.share-label {
+  display: inline-flex; align-items: center; gap: 3px; padding: 4px 7px; border-radius: 4px; font-size: 14px; font-weight: 600; line-height: 1;
+  background: var(--sel); color: color-mix(in srgb, var(--text) 72%, var(--muted));
+}
+.share-btn[hidden] { display: none; }
+.share-opt { margin-bottom: 4px; }
+.share-preview {
+  margin: 0; max-height: 260px; overflow: auto; padding: 12px 14px; border-radius: 14px;
+  background: var(--surface); font: 13.5px/1.6 inherit; font-family: inherit; white-space: pre-wrap; word-break: break-word;
+}
+
+/* 아이콘 버튼은 상자 가운데에 그림이 있어서 오른쪽 끝이 안쪽으로 보임
+   → 그림의 오른쪽 끝이 화면 오른쪽 여백(공유 버튼 끝)에 맞도록 밀어줌 */
+#settingsBtn { margin-right: -8px; }

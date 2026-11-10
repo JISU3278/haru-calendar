@@ -71,7 +71,7 @@ const isEditing = () => state.editing === ymd(state.cursor) && state.view !== 'w
 function readView() {
   try {
     const v = localStorage.getItem(VIEW_KEY);
-    return ['month', 'week', 'day'].includes(v) ? v : 'month';
+    return ['month', 'week'].includes(v) ? v : 'month'; // 예전 '일간'은 월간으로
   } catch {
     return 'month';
   }
@@ -85,15 +85,14 @@ const CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 function render() {
   const { view, cursor } = state;
   $('#title').textContent = formatYM(cursor);
+  $('#shareBtn').hidden = view !== 'month';
   $$('.seg button').forEach((b) => {
     const on = b.dataset.view === view;
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', on);
   });
   const main = $('#main');
-  if (view === 'month') main.innerHTML = renderMonth();
-  else if (view === 'week') main.innerHTML = renderWeek();
-  else main.innerHTML = renderDay();
+  main.innerHTML = view === 'week' ? renderWeek() : renderMonth();
 }
 
 const isTodo = (t) => t.kind === 'todo';
@@ -217,7 +216,7 @@ function renderWeek() {
     const cls = ['wday', d.getDay() === 0 && 'sun', d.getDay() === 6 && 'sat', ds === todayStr && 'today'].filter(Boolean).join(' ');
     html += `
       <section class="${cls}">
-        <button class="wday-head" type="button" data-goto-day="${ds}" aria-label="${formatMD(d)} 일간 보기">
+        <button class="wday-head" type="button" data-goto-day="${ds}" aria-label="${formatMD(d)} 월간에서 보기">
           <span class="wd">${WEEKDAYS[d.getDay()]}</span>
           <span class="dn">${d.getDate()}</span>
         </button>
@@ -227,17 +226,6 @@ function renderWeek() {
       </section>`;
   }
   return `<div class="week">${html}</div>`;
-}
-
-function renderDay() {
-  const ds = ymd(state.cursor);
-  const list = store.byDate(ds);
-  return `
-    <section class="dayview">
-      ${panelHead(state.cursor, list)}
-      ${list.length ? renderSections(list) : '<p class="empty">일정과 할 일이 없어요</p>'}
-      ${addButtons(ds)}
-    </section>`;
 }
 
 /* ───────────────── 이동 ───────────────── */
@@ -258,10 +246,9 @@ function step(dir) {
 }
 
 $$('.seg button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
-$('#prevBtn').addEventListener('click', () => step(-1));
-$('#nextBtn').addEventListener('click', () => step(1));
 $('#todayBtn').addEventListener('click', () => { state.cursor = today(); render(); });
 $('#settingsBtn').addEventListener('click', openSettingsSheet);
+$('#shareBtn').addEventListener('click', openShareSheet);
 $('#fab').addEventListener('click', openActionSheet);
 
 $('#main').addEventListener('click', (e) => {
@@ -283,27 +270,53 @@ $('#main').addEventListener('click', (e) => {
   } else if (el.dataset.action === 'add') {
     openTaskSheet(null, el.dataset.for, el.dataset.kind || 'event');
   } else if (el.dataset.gotoDay) {
+    // 주간에서 날짜를 누르면 월간으로 가서 그 날짜를 선택
     state.cursor = parseYmd(el.dataset.gotoDay);
-    setView('day');
+    setView('month');
+    // 달력 마지막 줄이 상단 고정바 바로 아래(윗줄이 18px 살짝 보이게)에 오도록 스크롤
+    // → 달력 한 줄 + 그 아래 날짜 목록이 함께 보여서 월간이라는 걸 알 수 있음
+    const cells = $$('.grid .cell');
+    const panel = $('.panel');
+    if (cells.length && panel) {
+      const barBottom = $('.topbar').getBoundingClientRect().bottom;
+      const lastRowTop = cells[cells.length - 1].getBoundingClientRect().top + window.scrollY;
+      const y = Math.max(0, lastRowTop - barBottom - 18);
+      // 일정이 적어 페이지가 짧으면 그 위치까지 스크롤할 수 있도록 아래 공간을 늘림
+      const maxY = document.documentElement.scrollHeight - window.innerHeight;
+      if (y > maxY) panel.style.minHeight = `${panel.offsetHeight + (y - maxY)}px`;
+      window.scrollTo(0, y);
+    }
   } else if (el.dataset.date) {
     state.cursor = parseYmd(el.dataset.date);
     render();
   }
 });
 
-// 좌우 스와이프로 이전/다음
+// 스와이프로 이전/다음 기간
+// - 월간: 좌우로 넘기기
+// - 주간: 위아래로 넘기기. 목록을 읽으며 스크롤하는 것과 겹치지 않게,
+//   맨 아래에서 위로 밀면 다음 주 / 맨 위에서 아래로 당기면 지난주
 let touchStart = null;
+const atTop = () => window.scrollY <= 2;
+const atBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
 $('#main').addEventListener('touchstart', (e) => {
   const t = e.touches[0];
-  touchStart = { x: t.clientX, y: t.clientY };
+  touchStart = { x: t.clientX, y: t.clientY, top: atTop(), bottom: atBottom() };
 }, { passive: true });
 $('#main').addEventListener('touchend', (e) => {
   if (!touchStart) return;
   const t = e.changedTouches[0];
   const dx = t.clientX - touchStart.x;
   const dy = t.clientY - touchStart.y;
+  const start = touchStart;
   touchStart = null;
-  if (isEditing()) return; // 편집 중에는 좌우로 넘기지 않음
+  if (isEditing()) return; // 편집 중에는 넘기지 않음
+  if (state.view === 'week') {
+    if (Math.abs(dy) < 80 || Math.abs(dx) > 60) return;
+    if (dy < 0 && start.bottom) { step(1); window.scrollTo(0, 0); }
+    else if (dy > 0 && start.top) { step(-1); window.scrollTo(0, 0); }
+    return;
+  }
   if (Math.abs(dx) > 60 && Math.abs(dy) < 50) step(dx < 0 ? 1 : -1);
 }, { passive: true });
 
@@ -804,12 +817,89 @@ function openImportSheet() {
     });
 
     $('#imParse', sheet).addEventListener('click', () => {
-      items = parseScheduleText(textEl.value).map((it) => ({ ...it, time: null }));
+      items = parseScheduleText(textEl.value).map((it) => ({ time: null, ...it }));
       if (!items.length) {
         showMessage('<p class="empty">날짜를 찾지 못했어요. "11월", "14일 (토) 제목" 같은 형식인지 확인해 주세요.</p>');
         return;
       }
       showPreview(false);
+    });
+  });
+}
+
+/* ───────────────── 이번 달 일정 공유 (텍스트) ───────────────── */
+
+// 받은 사람이 '사진·텍스트로 가져오기'에 그대로 붙여넣을 수 있는 형식
+function monthShareText(cursor, withSeries) {
+  const y = cursor.getFullYear();
+  const m = cursor.getMonth();
+  const map = store.groupByDate(ymd(new Date(y, m, 1)), ymd(new Date(y, m, daysInMonth(y, m))));
+  const dated = [];
+  const undecided = [];
+  for (const [ds, list] of [...map.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    for (const t of list) {
+      if (isTodo(t) || (!withSeries && t.seriesId)) continue;
+      if (t.dateUndecided) {
+        undecided.push(`• 날짜 미정 · ${t.title}`);
+        continue;
+      }
+      const d = parseYmd(ds);
+      dated.push(`• ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})${t.time ? ` ${t.time}` : ''} ${t.title}`);
+    }
+  }
+  const lines = [...dated, ...undecided];
+  return { count: lines.length, text: lines.length ? `📅 ${y}년 ${m + 1}월 일정\n${lines.join('\n')}` : '' };
+}
+
+function openShareSheet() {
+  const cursor = state.cursor;
+  const y = cursor.getFullYear();
+  const m = cursor.getMonth();
+  const monthMap = store.groupByDate(ymd(new Date(y, m, 1)), ymd(new Date(y, m, daysInMonth(y, m))));
+  const hasSeries = [...monthMap.values()].some((list) => list.some((t) => !isTodo(t) && t.seriesId));
+  openSheet(`${formatYM(cursor)} 일정 공유`, `
+    <p class="help">이번 달 <b>일정</b>을 글로 만들어 보내요. 받은 사람도 이 앱을 쓰면 글을 복사해서 <b>사진·텍스트로 가져오기</b>에 붙여넣으면 자기 달력에 넣을 수 있어요.</p>
+    ${hasSeries ? `
+    <label class="row share-opt">
+      <span>반복 일정 포함</span>
+      <input class="switch" type="checkbox" id="shareSeries" checked>
+    </label>` : ''}
+    <p class="field-label" id="shareCount"></p>
+    <pre class="share-preview" id="sharePreview"></pre>
+    <button class="btn primary" type="button" id="shareGo">공유하기</button>
+    <button class="btn soft" type="button" id="shareCopy">복사하기</button>`, (sheet) => {
+    const seriesEl = $('#shareSeries', sheet);
+    let current = '';
+    const update = () => {
+      const { count, text } = monthShareText(cursor, seriesEl ? seriesEl.checked : true);
+      current = text;
+      $('#shareCount', sheet).textContent = count ? `일정 ${count}개` : '';
+      $('#sharePreview', sheet).textContent = count ? text : '이번 달에 공유할 일정이 없어요.';
+      $('#shareGo', sheet).disabled = !count;
+      $('#shareCopy', sheet).disabled = !count;
+    };
+    seriesEl?.addEventListener('change', update);
+    update();
+
+    const copy = async () => {
+      try {
+        await navigator.clipboard.writeText(current);
+        toast('복사했어요');
+      } catch {
+        toast('복사하지 못했어요');
+      }
+    };
+    $('#shareCopy', sheet).addEventListener('click', copy);
+    $('#shareGo', sheet).addEventListener('click', async () => {
+      if (!navigator.share) {
+        copy();
+        return;
+      }
+      try {
+        await navigator.share({ text: current });
+      } catch (err) {
+        if (err && err.name !== 'AbortError') copy();
+      }
     });
   });
 }

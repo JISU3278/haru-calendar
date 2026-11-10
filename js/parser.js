@@ -4,7 +4,9 @@
 //   11월 / 2027년 / 27년 / 2027년 3월      → 이후 항목의 월·연도
 //   14일 (토) 제목 / 11월 14일 제목         → 날짜 + 제목
 //   11/14 (토) 제목 / 11.14 제목            → 날짜 + 제목
-//   (날짜 없는 줄)                          → 그 달 '날짜 미정' 항목
+//   14일 (토) 14:00 제목                    → 시간도 따로 읽음
+//   (날짜 없는 줄) / 날짜 미정 · 제목        → 그 달 '날짜 미정' 항목
+//   📅 2026년 11월 일정                      → 앱에서 공유한 글의 머리글
 import { daysInMonth, today as getToday, ymd } from './dates.js';
 
 const WD = '일월화수목금토';
@@ -46,6 +48,16 @@ function matchDate(s) {
   return { mon, day, wd: m[3] || null, rest: s.slice(m[0].length).trim() };
 }
 
+const TIME_RE = /^([01]?\d|2[0-3])\s*:\s*([0-5]\d)(?!\d)/;
+const UNDECIDED_RE = /^[(\[（]?\s*날짜\s*미정\s*[)\]）]?\s*[·:：\-–—]?\s*/;
+
+// 제목 앞의 시간(14:00)을 따로 떼어냄
+function splitTime(s) {
+  const m = s.match(TIME_RE);
+  if (!m) return { time: null, rest: s };
+  return { time: `${m[1].padStart(2, '0')}:${m[2]}`, rest: s.slice(m[0].length).trim() };
+}
+
 function cleanTitle(s) {
   return s.replace(/^[\s:：\-–—|]+/, '').replace(/\s+/g, ' ').trim();
 }
@@ -59,7 +71,11 @@ export function parseScheduleText(text, base = getToday()) {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(BULLET, '').trim();
     if (!line) continue;
-    const header = line.replace(/[\s:：]+$/, '');
+    // 머리글: 앞의 이모지, 뒤의 '일정'·콜론은 무시 (예: "📅 2026년 11월 일정")
+    const header = line
+      .replace(/^[\p{Extended_Pictographic}\uFE0F\s]+/u, '')
+      .replace(/\s*일정\s*$/, '')
+      .replace(/[\s:：]+$/, '');
 
     let m = header.match(YEAR_RE);
     if (m) {
@@ -91,7 +107,7 @@ export function parseScheduleText(text, base = getToday()) {
       if (hit.mon !== null && !yearExplicit) yr = inferYear(mo, base);
       if (yr === null) yr = inferYear(mo, base);
 
-      let rest = hit.rest;
+      let { rest } = hit;
       const dup = matchDate(rest);
       if (dup) {
         rest = dup.rest;
@@ -108,7 +124,8 @@ export function parseScheduleText(text, base = getToday()) {
       if (hit.wd && WD.indexOf(hit.wd) !== d.getDay()) {
         reasons.push(`요일이 맞지 않아요 (${hit.wd}요일로 적혀 있지만 실제로는 ${WD[d.getDay()]}요일)`);
       }
-      items.push({ date: ymd(d), title: cleanTitle(rest) || '(제목 없음)', dateUndecided: false, reasons });
+      const { time, rest: titlePart } = splitTime(rest);
+      items.push({ date: ymd(d), title: cleanTitle(titlePart) || '(제목 없음)', time, dateUndecided: false, reasons });
       continue;
     }
 
@@ -116,7 +133,8 @@ export function parseScheduleText(text, base = getToday()) {
     if (month !== null) {
       items.push({
         date: ymd(new Date(year, month - 1, 1)),
-        title: cleanTitle(line),
+        title: cleanTitle(line.replace(UNDECIDED_RE, '')) || '(제목 없음)',
+        time: null,
         dateUndecided: true,
         reasons: [`날짜가 없어서 ${month}월 1일에 '날짜 미정'으로 넣었어요`],
       });
