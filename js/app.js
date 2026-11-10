@@ -85,7 +85,7 @@ const CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 function render() {
   const { view, cursor } = state;
   $('#title').textContent = formatYM(cursor);
-  $('#shareBtn').hidden = view !== 'month';
+
   $$('.seg button').forEach((b) => {
     const on = b.dataset.view === view;
     b.classList.toggle('on', on);
@@ -743,6 +743,7 @@ function openImportSheet() {
                 <div class="pv-when">
                   <input type="date" value="${it.date}" data-pv-date>
                   ${it.time ? `<input type="time" value="${it.time}" data-pv-time>` : ''}
+                  ${it.kind === 'todo' ? '<span class="badge">할 일</span>' : ''}
                 </div>
                 <input class="field" value="${esc(it.title)}" data-pv-title>
                 ${it.reasons.map((r) => `<p class="warn-text">⚠︎ ${esc(r)}</p>`).join('')}
@@ -765,7 +766,7 @@ function openImportSheet() {
             const date = $('[data-pv-date]', li).value;
             const timeEl = $('[data-pv-time]', li);
             return {
-              kind: 'event', // 가져온 항목은 모두 일정
+              kind: it.kind === 'todo' ? 'todo' : 'event', // [할일] 표시가 있던 항목만 할 일
               title: $('[data-pv-title]', li).value.trim(),
               date,
               time: timeEl && timeEl.value ? timeEl.value : null,
@@ -830,55 +831,102 @@ function openImportSheet() {
 /* ───────────────── 이번 달 일정 공유 (텍스트) ───────────────── */
 
 // 받은 사람이 '사진·텍스트로 가져오기'에 그대로 붙여넣을 수 있는 형식
-function monthShareText(cursor, withSeries) {
-  const y = cursor.getFullYear();
-  const m = cursor.getMonth();
-  const map = store.groupByDate(ymd(new Date(y, m, 1)), ymd(new Date(y, m, daysInMonth(y, m))));
+const TODO_TAG = '[할일]';
+
+// 공유 범위: 월간이면 이번 달, 주간이면 이번 주
+function shareRange() {
+  const c = state.cursor;
+  if (state.view === 'week') {
+    const start = startOfWeek(c);
+    const end = addDays(start, 6);
+    const endLabel = start.getMonth() === end.getMonth() ? `${end.getDate()}일` : `${end.getMonth() + 1}월 ${end.getDate()}일`;
+    const label = `${start.getMonth() + 1}월 ${start.getDate()}일 ~ ${endLabel}`;
+    return { week: true, start, end, label, title: `${label} 일정 공유`, header: `📅 ${label} 주간 일정`, unit: '이번 주' };
+  }
+  const y = c.getFullYear();
+  const m = c.getMonth();
+  return {
+    week: false,
+    start: new Date(y, m, 1),
+    end: new Date(y, m, daysInMonth(y, m)),
+    title: `${formatYM(c)} 일정 공유`,
+    header: `📅 ${y}년 ${m + 1}월 일정`,
+    unit: '이번 달',
+  };
+}
+
+// 받은 사람이 '사진·텍스트로 가져오기'에 그대로 붙여넣을 수 있는 형식
+// - 월간: "• 14일 (토) ..." (머리글의 연·월을 따름)
+// - 주간: 달이 바뀔 수 있어서 "• 11월 14일 (토) ..."처럼 월까지 적음
+function shareText(range, { withSeries = true, withTodos = false } = {}) {
+  const map = store.groupByDate(ymd(range.start), ymd(range.end));
   const dated = [];
-  const undecided = [];
+  const undecided = new Map(); // 월 → 줄들
+  let events = 0;
+  let todos = 0;
   for (const [ds, list] of [...map.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const d = parseYmd(ds);
     for (const t of list) {
-      if (isTodo(t) || (!withSeries && t.seriesId)) continue;
+      if ((isTodo(t) && !withTodos) || (!withSeries && t.seriesId)) continue;
+      if (isTodo(t)) todos += 1;
+      else events += 1;
+      const tag = isTodo(t) ? ` ${TODO_TAG}` : '';
       if (t.dateUndecided) {
-        undecided.push(`• 날짜 미정 · ${t.title}`);
+        const mo = d.getMonth() + 1;
+        if (!undecided.has(mo)) undecided.set(mo, []);
+        undecided.get(mo).push(`• 날짜 미정 ·${tag} ${t.title}`);
         continue;
       }
-      const d = parseYmd(ds);
-      dated.push(`• ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})${t.time ? ` ${t.time}` : ''} ${t.title}`);
+      const day = range.week ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getDate()}일`;
+      dated.push(`• ${day} (${WEEKDAYS[d.getDay()]})${tag}${t.time ? ` ${t.time}` : ''} ${t.title}`);
     }
   }
-  const lines = [...dated, ...undecided];
-  return { count: lines.length, text: lines.length ? `📅 ${y}년 ${m + 1}월 일정\n${lines.join('\n')}` : '' };
+  const lines = [...dated];
+  for (const [mo, list] of undecided) {
+    if (range.week) lines.push(`${mo}월`); // 주간: 날짜 미정 항목이 몇 월인지 알 수 있게
+    lines.push(...list);
+  }
+  return { events, todos, text: lines.length ? `${range.header}\n${lines.join('\n')}` : '' };
 }
 
 function openShareSheet() {
-  const cursor = state.cursor;
-  const y = cursor.getFullYear();
-  const m = cursor.getMonth();
-  const monthMap = store.groupByDate(ymd(new Date(y, m, 1)), ymd(new Date(y, m, daysInMonth(y, m))));
-  const hasSeries = [...monthMap.values()].some((list) => list.some((t) => !isTodo(t) && t.seriesId));
-  openSheet(`${formatYM(cursor)} 일정 공유`, `
-    <p class="help">이번 달 <b>일정</b>을 글로 만들어 보내요. 받은 사람도 이 앱을 쓰면 글을 복사해서 <b>사진·텍스트로 가져오기</b>에 붙여넣으면 자기 달력에 넣을 수 있어요.</p>
+  const range = shareRange();
+  const all = [...store.groupByDate(ymd(range.start), ymd(range.end)).values()].flat();
+  const hasSeries = all.some((t) => t.seriesId);
+  const hasTodos = all.some(isTodo);
+  openSheet(range.title, `
+    <p class="help">${range.unit} 일정을 글로 만들어 보내요. 받은 사람도 이 앱을 쓰면 글을 복사해서 <b>사진·텍스트로 가져오기</b>에 붙여넣으면 자기 달력에 넣을 수 있어요.</p>
     ${hasSeries ? `
     <label class="row share-opt">
       <span>반복 일정 포함</span>
       <input class="switch" type="checkbox" id="shareSeries" checked>
+    </label>` : ''}
+    ${hasTodos ? `
+    <label class="row share-opt">
+      <span>할 일 포함 <small class="share-hint">${TODO_TAG} 표시</small></span>
+      <input class="switch" type="checkbox" id="shareTodos">
     </label>` : ''}
     <p class="field-label" id="shareCount"></p>
     <pre class="share-preview" id="sharePreview"></pre>
     <button class="btn primary" type="button" id="shareGo">공유하기</button>
     <button class="btn soft" type="button" id="shareCopy">복사하기</button>`, (sheet) => {
     const seriesEl = $('#shareSeries', sheet);
+    const todosEl = $('#shareTodos', sheet);
     let current = '';
     const update = () => {
-      const { count, text } = monthShareText(cursor, seriesEl ? seriesEl.checked : true);
+      const { events, todos, text } = shareText(range, {
+        withSeries: seriesEl ? seriesEl.checked : true,
+        withTodos: todosEl ? todosEl.checked : false,
+      });
+      const count = events + todos;
       current = text;
-      $('#shareCount', sheet).textContent = count ? `일정 ${count}개` : '';
-      $('#sharePreview', sheet).textContent = count ? text : '이번 달에 공유할 일정이 없어요.';
+      $('#shareCount', sheet).textContent = [events && `일정 ${events}개`, todos && `할 일 ${todos}개`].filter(Boolean).join(' · ');
+      $('#sharePreview', sheet).textContent = count ? text : `${range.unit}에 공유할 일정이 없어요.`;
       $('#shareGo', sheet).disabled = !count;
       $('#shareCopy', sheet).disabled = !count;
     };
     seriesEl?.addEventListener('change', update);
+    todosEl?.addEventListener('change', update);
     update();
 
     const copy = async () => {

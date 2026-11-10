@@ -7,6 +7,7 @@
 //   14일 (토) 14:00 제목                    → 시간도 따로 읽음
 //   (날짜 없는 줄) / 날짜 미정 · 제목        → 그 달 '날짜 미정' 항목
 //   📅 2026년 11월 일정                      → 앱에서 공유한 글의 머리글
+//   14일 (토) [할일] 제목                    → 할 일로 가져옴
 import { daysInMonth, today as getToday, ymd } from './dates.js';
 
 const WD = '일월화수목금토';
@@ -49,6 +50,14 @@ function matchDate(s) {
 }
 
 const TIME_RE = /^([01]?\d|2[0-3])\s*:\s*([0-5]\d)(?!\d)/;
+const TODO_RE = /^[\[［]\s*할\s*일\s*[\]］]\s*/;
+
+// 제목 앞의 [할일] 표시를 떼어냄
+function splitKind(s) {
+  const m = s.match(TODO_RE);
+  return m ? { kind: 'todo', rest: s.slice(m[0].length) } : { kind: 'event', rest: s };
+}
+
 const UNDECIDED_RE = /^[(\[（]?\s*날짜\s*미정\s*[)\]）]?\s*[·:：\-–—]?\s*/;
 
 // 제목 앞의 시간(14:00)을 따로 떼어냄
@@ -124,8 +133,9 @@ export function parseScheduleText(text, base = getToday()) {
       if (hit.wd && WD.indexOf(hit.wd) !== d.getDay()) {
         reasons.push(`요일이 맞지 않아요 (${hit.wd}요일로 적혀 있지만 실제로는 ${WD[d.getDay()]}요일)`);
       }
-      const { time, rest: titlePart } = splitTime(rest);
-      items.push({ date: ymd(d), title: cleanTitle(titlePart) || '(제목 없음)', time, dateUndecided: false, reasons });
+      const { kind, rest: afterKind } = splitKind(rest);
+      const { time, rest: titlePart } = splitTime(afterKind);
+      items.push({ date: ymd(d), title: cleanTitle(titlePart) || '(제목 없음)', time, kind, dateUndecided: false, reasons });
       continue;
     }
 
@@ -133,7 +143,10 @@ export function parseScheduleText(text, base = getToday()) {
     if (month !== null) {
       items.push({
         date: ymd(new Date(year, month - 1, 1)),
-        title: cleanTitle(line.replace(UNDECIDED_RE, '')) || '(제목 없음)',
+        ...(() => {
+          const { kind, rest } = splitKind(line.replace(UNDECIDED_RE, ''));
+          return { kind, title: cleanTitle(rest) || '(제목 없음)' };
+        })(),
         time: null,
         dateUndecided: true,
         reasons: [`날짜가 없어서 ${month}월 1일에 '날짜 미정'으로 넣었어요`],

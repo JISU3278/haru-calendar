@@ -370,7 +370,7 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .gray-seg { grid-template-columns: repeat(3, 1fr); margin: 0; }
 
 /* ───── 이번 달 일정 공유 ───── */
-/* 공유 버튼: 제목 줄 오른쪽 (월간 보기에서만) */
+/* 공유 버튼: 제목 줄 오른쪽 (월간: 이번 달, 주간: 이번 주) */
 .share-btn { width: auto; height: 32px; padding: 0 0 0 6px; display: flex; align-items: center; gap: 3px; color: var(--muted); }
 /* 버튼 터치 영역은 그대로, 안쪽 글자만 작은 회색 칩 모양 */
 .share-label {
@@ -387,3 +387,5 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 /* 아이콘 버튼은 상자 가운데에 그림이 있어서 오른쪽 끝이 안쪽으로 보임
    → 그림의 오른쪽 끝이 화면 오른쪽 여백(공유 버튼 끝)에 맞도록 밀어줌 */
 #settingsBtn { margin-right: -8px; }
+.share-hint { margin-left: 6px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.pv-when { align-items: center; }
