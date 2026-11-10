@@ -386,6 +386,10 @@ const pickedTime = (root) => ($('[data-time-on]', root).checked ? $('[data-time]
 function openActionSheet() {
   openSheet('추가하기', `
     <div class="action-list">
+      <button type="button" data-act="import">
+        <span class="action-icon">📋</span>
+        <span class="action-text"><strong>사진·텍스트로 가져오기</strong><small>스케줄 사진이나 복사한 글을 날짜별로 정리</small></span>
+      </button>
       <button type="button" data-act="event">
         <span class="action-icon">📅</span>
         <span class="action-text"><strong>일정 추가</strong><small>캘린더에 보여주기만 하는 일정</small></span>
@@ -397,10 +401,6 @@ function openActionSheet() {
       <button type="button" data-act="bulk">
         <span class="action-icon">🔁</span>
         <span class="action-text"><strong>반복 일정 등록하기</strong><small>예: 월·화 미술학원, 수·목·금 디자인 외주 1년치</small></span>
-      </button>
-      <button type="button" data-act="import">
-        <span class="action-icon">📋</span>
-        <span class="action-text"><strong>사진·텍스트로 가져오기</strong><small>스케줄 사진이나 복사한 글을 날짜별로 정리</small></span>
       </button>
     </div>`, (sheet) => {
     sheet.addEventListener('click', (e) => {
