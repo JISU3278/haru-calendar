@@ -164,8 +164,8 @@ function addButtons(ds) {
     </div>`;
 }
 
-function renderMonth() {
-  const { cursor } = state;
+// 월 달력 칸(그리드 안쪽)만 그림. cursor = 그 달의 선택 날짜
+function monthGridHTML(cursor) {
   const y = cursor.getFullYear();
   const m = cursor.getMonth();
   const first = new Date(y, m, 1);
@@ -238,11 +238,17 @@ function renderMonth() {
       </button>`;
   }
 
+  return cells + bars;
+}
+
+function renderMonth() {
+  const { cursor } = state;
+  const selStr = ymd(cursor);
   const selList = store.byDate(selStr);
   return `
     <section class="month">
       <div class="wk-head">${WEEKDAYS.map((w) => `<span>${w}</span>`).join('')}</div>
-      <div class="grid">${cells}${bars}</div>
+      <div class="grid-viewport"><div class="grid">${monthGridHTML(cursor)}</div></div>
     </section>
     <section class="panel">
       ${panelHead(cursor, selList)}
@@ -269,11 +275,12 @@ function renderWeek() {
           <span class="dn">${d.getDate()}</span>
         </button>
         <div class="wday-body">
-          ${list.length ? renderTaskList(list) : `<button class="wday-empty" type="button" data-action="add" data-for="${ds}">+ 추가</button>`}
+          ${list.length ? renderTaskList(list) : ''}
+          <button class="wday-empty ${list.length ? 'wday-add' : ''}" type="button" data-action="add" data-for="${ds}">+ 추가</button>
         </div>
       </section>`;
   }
-  return `<div class="week">${html}</div>`;
+  return `<div class="week">${html}<p class="week-hint">맨 아래에서 위로 밀면 다음 주 · 맨 위에서 아래로 당기면 지난주</p></div>`;
 }
 
 /* ───────────────── 이동 ───────────────── */
@@ -344,29 +351,129 @@ $('#main').addEventListener('click', (e) => {
 // - 월간: 좌우로 넘기기
 // - 주간: 위아래로 넘기기. 목록을 읽으며 스크롤하는 것과 겹치지 않게,
 //   맨 아래에서 위로 밀면 다음 주 / 맨 위에서 아래로 당기면 지난주
+//
+// 잘 안 넘어가던 이유와 고친 점
+// - 맨 위/맨 아래 판정이 2px로 너무 빡빡했음 (iOS 주소창·튕김으로 몇 px씩 어긋남) → 24px 여유
+// - 밀어야 하는 거리 80px, 옆으로 60px만 흔들려도 무시 → 50px, 방향은 비율로 판단
+// - 안드로이드 크롬은 화면이 스크롤되기 시작하면 touchend 대신 touchcancel을 보냄 → 둘 다 처리
+// - 상단 고정바나 목록 밖 빈 곳에서 시작한 밀기도 인식 (화면 전체에서 받음)
+const EDGE = 24; // 맨 위/아래로 볼 여유(px)
+const SWIPE = 50; // 넘기기에 필요한 거리(px)
+const scrollBottomGap = () => {
+  const el = document.scrollingElement || document.documentElement;
+  const viewH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  return el.scrollHeight - (window.scrollY + viewH);
+};
 let touchStart = null;
-const atTop = () => window.scrollY <= 2;
-const atBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
-$('#main').addEventListener('touchstart', (e) => {
+let touchLast = null;
+const swipeBlocked = (target) => sheetRoot.classList.contains('open')
+  || document.querySelector('.picker, .choice')
+  || target.closest?.('.handle, .wheel, input, textarea');
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1 || swipeBlocked(e.target)) { touchStart = null; return; }
   const t = e.touches[0];
-  touchStart = { x: t.clientX, y: t.clientY, top: atTop(), bottom: atBottom() };
+  touchStart = { x: t.clientX, y: t.clientY, top: window.scrollY <= EDGE, bottom: scrollBottomGap() <= EDGE };
+  touchLast = { x: t.clientX, y: t.clientY };
 }, { passive: true });
-$('#main').addEventListener('touchend', (e) => {
+document.addEventListener('touchmove', (e) => {
+  if (touchStart) touchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+const finishSwipe = (e) => {
   if (!touchStart) return;
-  const t = e.changedTouches[0];
-  const dx = t.clientX - touchStart.x;
-  const dy = t.clientY - touchStart.y;
+  const t = e.changedTouches?.[0] || touchLast;
+  const end = t ? { x: t.clientX ?? t.x, y: t.clientY ?? t.y } : touchLast;
   const start = touchStart;
   touchStart = null;
-  if (isEditing()) return; // 편집 중에는 넘기지 않음
+  if (!end || isEditing()) return; // 편집 중에는 넘기지 않음
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
   if (state.view === 'week') {
-    if (Math.abs(dy) < 80 || Math.abs(dx) > 60) return;
+    if (Math.abs(dy) < SWIPE || Math.abs(dy) < Math.abs(dx) * 1.2) return;
     if (dy < 0 && start.bottom) { step(1); window.scrollTo(0, 0); }
     else if (dy > 0 && start.top) { step(-1); window.scrollTo(0, 0); }
     return;
   }
-  if (Math.abs(dx) > 60 && Math.abs(dy) < 50) step(dx < 0 ? 1 : -1);
+};
+document.addEventListener('touchend', finishSwipe, { passive: true });
+document.addEventListener('touchcancel', finishSwipe, { passive: true });
+
+// 월간: 손가락을 따라 달력이 옆으로 움직이고, 놓으면 다음/이전 달이 밀려 들어옴
+// (위쪽 요일 줄과 아래 목록은 그대로, 달력 칸만 움직임)
+let mdrag = null; // { x, y, t, dir결정, track, w }
+let mAnimating = false;
+const MONTH_EASE = 'transform 0.32s cubic-bezier(0.22, 0.8, 0.24, 1)';
+
+function monthDragBegin() {
+  const viewport = $('.grid-viewport');
+  const grid = $('.grid-viewport > .grid');
+  if (!viewport || !grid) return null;
+  const w = viewport.clientWidth;
+  const prev = addMonths(state.cursor, -1);
+  const next = addMonths(state.cursor, 1);
+  const track = document.createElement('div');
+  track.className = 'mtrack';
+  track.style.width = `${w * 3}px`;
+  track.innerHTML = `<div class="grid" style="width:${w}px">${monthGridHTML(prev)}</div>`;
+  grid.style.width = `${w}px`;
+  track.appendChild(grid);
+  track.insertAdjacentHTML('beforeend', `<div class="grid" style="width:${w}px">${monthGridHTML(next)}</div>`);
+  viewport.appendChild(track);
+  track.style.transform = `translateX(${-w}px)`;
+  return { track, w };
+}
+
+$('#main').addEventListener('touchstart', (e) => {
+  if (state.view !== 'month' || mAnimating || e.touches.length !== 1 || swipeBlocked(e.target) || isEditing()) { mdrag = null; return; }
+  const t = e.touches[0];
+  mdrag = { x: t.clientX, y: t.clientY, t: performance.now(), horiz: null, track: null, w: 0, dx: 0, vx: 0, lastX: t.clientX, lastT: performance.now() };
 }, { passive: true });
+
+$('#main').addEventListener('touchmove', (e) => {
+  if (!mdrag) return;
+  const t = e.touches[0];
+  const dx = t.clientX - mdrag.x;
+  const dy = t.clientY - mdrag.y;
+  if (mdrag.horiz === null) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    mdrag.horiz = Math.abs(dx) > Math.abs(dy);
+    if (!mdrag.horiz) { mdrag = null; return; } // 세로면 그냥 스크롤
+    const begun = monthDragBegin();
+    if (!begun) { mdrag = null; return; }
+    Object.assign(mdrag, begun);
+  }
+  e.preventDefault(); // 옆으로 끄는 동안 화면이 위아래로 흔들리지 않게
+  const now = performance.now();
+  mdrag.vx = (t.clientX - mdrag.lastX) / Math.max(1, now - mdrag.lastT);
+  mdrag.lastX = t.clientX;
+  mdrag.lastT = now;
+  mdrag.dx = dx;
+  mdrag.track.style.transform = `translateX(${-mdrag.w + dx}px)`;
+}, { passive: false });
+
+const monthDragEnd = () => {
+  const d = mdrag;
+  mdrag = null;
+  if (!d || !d.track) return;
+  // 1/4 이상 끌었거나 빠르게 튕기면 넘김
+  const fling = Math.abs(d.vx) > 0.35 && Math.sign(d.vx) === Math.sign(d.dx);
+  const dir = Math.abs(d.dx) > d.w / 4 || fling ? (d.dx < 0 ? 1 : -1) : 0;
+  mAnimating = true;
+  d.track.style.transition = MONTH_EASE;
+  d.track.style.transform = `translateX(${-d.w - dir * d.w}px)`;
+  if (dir) $('#title').textContent = formatYM(addMonths(state.cursor, dir));
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    mAnimating = false;
+    if (dir) state.cursor = addMonths(state.cursor, dir);
+    render();
+  };
+  d.track.addEventListener('transitionend', finish, { once: true });
+  setTimeout(finish, 450); // transitionend가 안 올 때 대비
+};
+$('#main').addEventListener('touchend', monthDragEnd, { passive: true });
+$('#main').addEventListener('touchcancel', monthDragEnd, { passive: true });
 
 // 순서 편집: 손잡이(≡)를 잡고 위아래로 끌기 — 같은 묶음(일정/할 일) 안에서만
 $('#main').addEventListener('pointerdown', (e) => {
