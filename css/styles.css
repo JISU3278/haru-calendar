@@ -222,7 +222,7 @@ svg { display: block; }
 .wday.sat .wd, .wday.sat .dn { color: var(--sat); }
 .wday.today .dn { background: var(--primary); color: var(--primary-ink); }
 .wday-body { flex: 1; min-width: 0; }
-.wday-body .tasks { gap: 6px; }
+.wday-body .tasks { gap: 6px; padding-bottom: 16px; } /* 일정 아래 빈 곳: 눌러서 일정 추가 */
 .wday-body .task { padding: 9px 10px 9px calc(var(--task-r) + 10px); }
 /* 그 날 줄의 빈 곳을 누르면 일정 추가 (일정 카드·날짜를 누르면 각자 동작) */
 .wday { cursor: pointer; }
