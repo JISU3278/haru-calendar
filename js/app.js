@@ -9,11 +9,15 @@ import {
   PROXY_URL, canReadPhotos, getApiKey, getInvite, readScheduleImage, setApiKey, setInvite,
 } from './ai.js';
 import { parseScheduleText } from './parser.js';
+import { watchPickers } from './pickers.js';
 import { countWeekly, expandWeekly } from './recurrence.js';
-import { store } from './store.js';
+import { isSpanning, lastDay, store } from './store.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+// 바텀시트 안의 날짜·시간·색 입력칸을 앱 전용 선택 화면으로 (아이폰·갤럭시 같은 모양)
+watchPickers(document.getElementById('sheetRoot'));
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -99,9 +103,14 @@ const isTodo = (t) => t.kind === 'todo';
 const KIND_LABEL = { event: '일정', todo: '할 일' };
 
 // 일정: 보기만 / 할 일: 오른쪽 끝에 완료 체크
+// 연속 일정 기간 표시: "11/14 ~ 11/17"
+const shortMD = (ds) => { const d = parseYmd(ds); return `${d.getMonth() + 1}/${d.getDate()}`; };
+const rangeText = (t) => `${shortMD(t.date)} ~ ${shortMD(t.endDate)}`;
+
 function renderTaskItem(t, editing = false) {
   const todo = isTodo(t);
   const badges = [];
+  if (isSpanning(t)) badges.push(`<span class="badge">${rangeText(t)}</span>`);
   if (t.dateUndecided) badges.push('<span class="badge warn">날짜 미정</span>');
   return `
     <li class="task ${todo ? 'todo' : 'event'} ${todo && t.done ? 'done' : ''}" data-id="${t.id}" style="${colorVars(t.color)}">
@@ -167,11 +176,44 @@ function renderMonth() {
   const todayStr = ymd(today());
   const selStr = ymd(cursor);
 
+  // 주(줄)마다 연속 일정에 줄 번호(lane)를 매김 → 같은 일정은 그 주 안에서 같은 높이
+  const MAX_SLOTS = 3;
+  const laneOf = []; // 줄별 Map(id → lane)
+  let bars = '';
+  for (let r = 0; r < rows; r++) {
+    const rowStart = ymd(addDays(gridStart, r * 7));
+    const rowEnd = ymd(addDays(gridStart, r * 7 + 6));
+    const spans = [];
+    const seen = new Set();
+    for (let c = 0; c < 7; c++) {
+      for (const t of map.get(ymd(addDays(gridStart, r * 7 + c))) || []) {
+        if (isSpanning(t) && !seen.has(t.id)) { seen.add(t.id); spans.push(t); }
+      }
+    }
+    // 먼저 시작하는 것, 같으면 긴 것부터
+    spans.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : lastDay(b) < lastDay(a) ? -1 : 1));
+    const used = []; // lane → 마지막으로 차지한 열
+    const lanes = new Map();
+    for (const t of spans) {
+      const c0 = t.date < rowStart ? 0 : parseYmd(t.date).getDay();
+      const c1 = lastDay(t) > rowEnd ? 6 : parseYmd(lastDay(t)).getDay();
+      let lane = used.findIndex((endCol) => endCol < c0);
+      if (lane === -1) { lane = used.length; used.push(c1); } else used[lane] = c1;
+      lanes.set(t.id, { lane, c0, c1 });
+      if (lane >= MAX_SLOTS) continue; // 3줄 넘으면 +n으로만
+      const startsHere = t.date >= rowStart;
+      const endsHere = lastDay(t) <= rowEnd;
+      bars += `<span class="bar ${startsHere ? 'bar-start' : ''} ${endsHere ? 'bar-end' : ''}" style="grid-row:${r + 1};grid-column:${c0 + 1} / ${c1 + 2};--lane:${lane};${colorVars(t.color)}">${esc(t.title)}</span>`;
+    }
+    laneOf.push(lanes);
+  }
+
   let cells = '';
   for (let i = 0; i < rows * 7; i++) {
     const d = addDays(gridStart, i);
     const ds = ymd(d);
     const list = map.get(ds) || [];
+    const lanes = laneOf[Math.floor(i / 7)];
     const cls = [
       'cell',
       d.getMonth() !== m && 'out',
@@ -180,11 +222,17 @@ function renderMonth() {
       ds === todayStr && 'today',
       ds === selStr && 'sel',
     ].filter(Boolean).join(' ');
-    const shown = list.slice(0, 3);
-    const more = list.length - shown.length;
+    // 이 날 막대가 차지한 줄만큼 빈자리를 두고, 남은 자리에 하루짜리를 채움
+    const spanLanes = list.filter(isSpanning).map((t) => lanes.get(t.id).lane);
+    const reserved = Math.min(MAX_SLOTS, spanLanes.length ? Math.max(...spanLanes) + 1 : 0);
+    const singles = list.filter((t) => !isSpanning(t));
+    const shown = singles.slice(0, MAX_SLOTS - reserved);
+    const visibleBars = spanLanes.filter((l) => l < MAX_SLOTS).length;
+    const more = list.length - visibleBars - shown.length;
     cells += `
-      <button class="${cls}" type="button" data-date="${ds}" aria-label="${formatMD(d)}, 할 일 ${list.length}개">
+      <button class="${cls}" type="button" data-date="${ds}" style="grid-row:${Math.floor(i / 7) + 1};grid-column:${(i % 7) + 1}" aria-label="${formatMD(d)}, 할 일 ${list.length}개">
         <span class="num">${d.getDate()}</span>
+        ${'<span class="lbl lbl-space" aria-hidden="true"></span>'.repeat(reserved)}
         ${shown.map((t) => `<span class="lbl ${isTodo(t) ? 'todo' : ''} ${isTodo(t) && t.done ? 'done' : ''}" style="${colorVars(t.color)}">${esc(t.title)}</span>`).join('')}
         ${more > 0 ? `<span class="more">+${more}</span>` : ''}
       </button>`;
@@ -194,7 +242,7 @@ function renderMonth() {
   return `
     <section class="month">
       <div class="wk-head">${WEEKDAYS.map((w) => `<span>${w}</span>`).join('')}</div>
-      <div class="grid">${cells}</div>
+      <div class="grid">${cells}${bars}</div>
     </section>
     <section class="panel">
       ${panelHead(cursor, selList)}
@@ -393,6 +441,32 @@ function closeSheet() {
   setTimeout(() => { if (!sheetRoot.classList.contains('open')) sheetRoot.innerHTML = ''; }, 260);
 }
 
+// 선택지 팝업: choose('제목', [{ value, label, danger }]) → 고른 value, 취소하면 null
+function choose(title, options) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'choice';
+    wrap.innerHTML = `
+      <div class="choice-backdrop" data-v=""></div>
+      <div class="choice-box" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="choice-group">
+          <p class="choice-title">${esc(title)}</p>
+          ${options.map((o, i) => `<button type="button" class="choice-btn ${o.danger ? 'danger' : ''}" data-i="${i}">${esc(o.label)}</button>`).join('')}
+        </div>
+        <button type="button" class="choice-btn choice-cancel" data-v="">취소</button>
+      </div>`;
+    document.body.appendChild(wrap);
+    requestAnimationFrame(() => wrap.classList.add('open'));
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i], [data-v]');
+      if (!b) return;
+      wrap.classList.remove('open');
+      setTimeout(() => wrap.remove(), 220);
+      resolve(b.dataset.i !== undefined ? options[Number(b.dataset.i)].value : null);
+    });
+  });
+}
+
 let toastTimer;
 function toast(msg) {
   const el = $('#toast');
@@ -439,34 +513,41 @@ function bindTimeToggle(root, onChange) {
 
 const pickedTime = (root) => ($('[data-time-on]', root).checked ? $('[data-time]', root).value || null : null);
 
+// 종료일 (일정만): 기본은 시작일과 같음 → 하루짜리. 뒤로 바꾸면 연속 일정
+function spanEndHTML(t) {
+  return `<div class="row" data-span-row ${t.kind === 'todo' ? 'hidden' : ''}><span>종료일</span><input type="date" data-span-end value="${t.endDate || t.date}"></div>`;
+}
+
 /* ───────────────── + 버튼: 무엇을 추가할지 ───────────────── */
 
 function openActionSheet() {
   openSheet('추가하기', `
     <div class="action-list">
-      <button type="button" data-act="import">
-        <span class="action-icon">📋</span>
-        <span class="action-text"><strong>사진·텍스트로 가져오기</strong><small>스케줄 사진이나 복사한 글을 날짜별로 정리</small></span>
+      <button type="button" data-act="photo">
+        <span class="action-icon"><svg width="24" height="24" viewBox="0 0 30 30" fill="currentColor" aria-hidden="true"><path d="M 4 5 C 2.895 5 2 5.895 2 7 L 2 23 C 2 24.105 2.895 25 4 25 L 26 25 C 27.105 25 28 24.105 28 23 L 28 7 C 28 5.895 27.105 5 26 5 L 4 5 z M 23 8 C 24.105 8 25 8.895 25 10 C 25 11.105 24.105 12 23 12 C 21.895 12 21 11.105 21 10 C 21 8.895 21.895 8 23 8 z M 9 12.001953 C 9.61925 12.001953 10.238437 12.238437 10.710938 12.710938 L 13.972656 15.972656 L 15 17 L 16.15625 18.15625 C 16.57825 18.57825 17.259641 18.574344 17.681641 18.152344 C 18.104641 17.730344 18.104641 17.044094 17.681641 16.621094 L 16.529297 15.470703 L 17.289062 14.710938 C 18.234063 13.765937 19.765937 13.765937 20.710938 14.710938 L 25 19 L 25 22 L 5 22 L 5 15 L 7.2890625 12.710938 C 7.7615625 12.238437 8.38075 12.001953 9 12.001953 z"/></svg></span>
+        <span class="action-text"><strong>사진으로 가져오기</strong></span>
+      </button>
+      <button type="button" data-act="text">
+        <span class="action-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21,2H3A1,1,0,0,0,2,3V21a1,1,0,0,0,1,1H21a1,1,0,0,0,1-1V3A1,1,0,0,0,21,2ZM18,8a1,1,0,0,1-2,0H13v8h1a1,1,0,0,1,0,2H10a1,1,0,0,1,0-2h1V8H8A1,1,0,0,1,6,8V7A1,1,0,0,1,7,6H17a1,1,0,0,1,1,1V8Z"/></svg></span>
+        <span class="action-text"><strong>텍스트로 추가하기</strong></span>
       </button>
       <button type="button" data-act="event">
-        <span class="action-icon">📅</span>
-        <span class="action-text"><strong>일정 추가</strong><small>캘린더에 보여주기만 하는 일정</small></span>
-      </button>
-      <button type="button" data-act="todo">
-        <span class="action-icon">✅</span>
-        <span class="action-text"><strong>할 일 추가</strong><small>완료 체크를 할 수 있는 할 일</small></span>
+        <span class="action-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M 7 1 C 6.448 1 6 1.448 6 2 L 6 3 L 5 3 C 3.9 3 3 3.9 3 5 L 3 19 C 3 20.1 3.9 21 5 21 L 19 21 C 20.1 21 21 20.1 21 19 L 21 5 C 21 3.9 20.1 3 19 3 L 18 3 L 18 2 C 18 1.448 17.552 1 17 1 C 16.448 1 16 1.448 16 2 L 16 3 L 8 3 L 8 2 C 8 1.448 7.552 1 7 1 z M 5 8 L 19 8 L 19 19 L 5 19 L 5 8 z M 14 13 C 13.448 13 13 13.448 13 14 L 13 16 C 13 16.552 13.448 17 14 17 L 16 17 C 16.552 17 17 16.552 17 16 L 17 14 C 17 13.448 16.552 13 16 13 L 14 13 z"/></svg></span>
+        <span class="action-text"><strong>일정·할 일 추가</strong></span>
       </button>
       <button type="button" data-act="bulk">
-        <span class="action-icon">🔁</span>
-        <span class="action-text"><strong>반복 일정 등록하기</strong><small>예: 월·화 미술학원, 수·목·금 디자인 외주 1년치</small></span>
+        <span class="action-icon"><svg width="24" height="24" viewBox="0 0 72 72" fill="currentColor" aria-hidden="true"><path d="M55 36c1.657 0 3 1.343 3 3v6c0 4.411-3.589 8-8 8H28v4.154c0 1.474-1.654 2.343-2.867 1.506L14.75 51.506c-1.055-.727-1.055-2.286 0-3.013l10.382-7.154C26.346 40.504 28 41.372 28 42.846V47h22c1.103 0 2-.897 2-2v-6C52 37.343 53.343 36 55 36zM57.25 20.494c1.055.727 1.055 2.286 0 3.013L46.867 30.66C45.654 31.496 44 30.628 44 29.154V25H22c-1.103 0-2 .897-2 2v6c0 1.657-1.343 3-3 3s-3-1.343-3-3v-6c0-4.411 3.589-8 8-8h22v-4.154c0-1.474 1.654-2.343 2.867-1.506L57.25 20.494z"/></svg></span>
+        <span class="action-text"><strong>반복 일정 등록하기</strong></span>
       </button>
     </div>`, (sheet) => {
     sheet.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
       if (!b) return;
-      if (b.dataset.act === 'event' || b.dataset.act === 'todo') openTaskSheet(null, ymd(state.cursor), b.dataset.act);
+      // 일정·할 일 추가: 일정 탭으로 열림 (시트 안에서 할 일로 바꿀 수 있음)
+      if (b.dataset.act === 'event') openTaskSheet(null, ymd(state.cursor), 'event');
       if (b.dataset.act === 'bulk') openBulkSheet();
-      if (b.dataset.act === 'import') openImportSheet();
+      if (b.dataset.act === 'photo') openImportSheet('photo');
+      if (b.dataset.act === 'text') openImportSheet('text');
     });
   });
 }
@@ -506,7 +587,8 @@ function openTaskSheet(task, dateStr, kind = 'event') {
     <form id="taskForm" autocomplete="off">
       ${kindSegHTML(t.kind)}
       <input class="field big" name="title" placeholder="${PLACEHOLDER[t.kind]}" value="${esc(t.title)}" required>
-      <div class="row" style="margin-top:6px"><span>날짜</span><input type="date" name="date" value="${t.date}" required></div>
+      <div class="row" style="margin-top:6px"><span data-date-label>${t.kind === 'todo' ? '날짜' : '시작일'}</span><input type="date" name="date" value="${t.date}" required></div>
+      ${spanEndHTML(t)}
       ${timeToggleHTML(t.time)}
       <p class="field-label">색상</p>
       ${paletteHTML(t.color)}
@@ -514,18 +596,28 @@ function openTaskSheet(task, dateStr, kind = 'event') {
       <textarea class="field" name="note" rows="3" placeholder="메모 (선택)">${esc(t.note || '')}</textarea>
       <button class="btn primary" type="submit">${editing ? '저장' : '추가'}</button>
       ${editing ? '<button class="btn danger" type="button" data-act="delete">삭제</button>' : ''}
-      ${seriesCount > 1 ? `<button class="btn soft" type="button" data-act="delete-series">이후 반복 일정 모두 삭제 (${seriesCount}개)</button>` : ''}
     </form>`, (sheet) => {
     const form = $('#taskForm', sheet);
     bindPalette(sheet);
     bindTimeToggle(sheet);
+    const spanEnd = $('[data-span-end]', sheet);
+    spanEnd.min = form.date.value; // 종료일 선택 화면에서 시작일 앞 날짜는 못 고르게
+    // 시작일을 바꾸면: 하루짜리였거나 종료일이 시작일보다 앞이 되면 종료일도 같이 옮김
+    let prevStart = form.date.value;
+    form.date.addEventListener('change', () => {
+      if (!spanEnd.value || spanEnd.value === prevStart || spanEnd.value < form.date.value) spanEnd.value = form.date.value;
+      spanEnd.min = form.date.value;
+      prevStart = form.date.value;
+    });
     bindKindSeg(sheet, (k) => {
       $('.sheet-head h3', sheet).textContent = sheetTitle(k);
       form.title.placeholder = PLACEHOLDER[k];
+      $('[data-span-row]', sheet).hidden = k === 'todo';
+      $('[data-date-label]', sheet).textContent = k === 'todo' ? '날짜' : '시작일';
     });
     if (!editing) setTimeout(() => form.title.focus(), 280);
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const data = {
         kind: pickedKind(sheet),
@@ -534,9 +626,34 @@ function openTaskSheet(task, dateStr, kind = 'event') {
         color: pickedColor(sheet),
         time: pickedTime(sheet),
         note: form.note.value.trim(),
+        endDate: null,
       };
       if (!data.title || !data.date) return;
-      if (editing) {
+      if (data.kind === 'event' && spanEnd.value) {
+        if (spanEnd.value < data.date) {
+          toast('종료일이 시작일보다 앞이에요');
+          return;
+        }
+        if (spanEnd.value > data.date) data.endDate = spanEnd.value; // 같으면 하루짜리
+      }
+      // 반복 일정이면 이 일정만 / 이후 모든 일정 중 고르기
+      let allSeries = false;
+      if (seriesCount > 1) {
+        const pick = await choose('반복 일정 저장', [
+          { value: 'one', label: '이 일정만 저장' },
+          { value: 'all', label: `이후 모든 일정 저장 (${seriesCount}개)` },
+        ]);
+        if (!pick) return;
+        allSeries = pick === 'all';
+      }
+      if (editing && allSeries) {
+        // 제목·색·시간·메모·종류는 이후 반복 일정 모두에, 날짜는 이 일정에만
+        store.updateSeries(t.seriesId, t.date, data);
+        if (data.date !== t.date || data.endDate !== (t.endDate || null)) {
+          store.update(t.id, { date: data.date, endDate: data.endDate, dateUndecided: false });
+        }
+        toast(`반복 일정 ${seriesCount}개를 저장했어요`);
+      } else if (editing) {
         if (data.date !== t.date) data.dateUndecided = false;
         store.update(t.id, data);
         toast('저장했어요');
@@ -549,16 +666,23 @@ function openTaskSheet(task, dateStr, kind = 'event') {
       render();
     });
 
-    $('[data-act="delete"]', sheet)?.addEventListener('click', () => {
+    $('[data-act="delete"]', sheet)?.addEventListener('click', async () => {
+      if (seriesCount > 1) {
+        const pick = await choose('반복 일정 삭제', [
+          { value: 'one', label: '이 일정만 삭제', danger: true },
+          { value: 'all', label: `이후 모든 일정 삭제 (${seriesCount}개)`, danger: true },
+        ]);
+        if (!pick) return;
+        if (pick === 'all') {
+          store.removeSeries(t.seriesId, t.date);
+          closeSheet();
+          toast(`${seriesCount}개 삭제했어요`);
+          return;
+        }
+      }
       store.remove(t.id);
       closeSheet();
       toast('삭제했어요');
-    });
-    $('[data-act="delete-series"]', sheet)?.addEventListener('click', () => {
-      if (!confirm(`'${t.title}' 반복 일정 중 ${t.date} 이후 ${seriesCount}개를 삭제할까요?`)) return;
-      store.removeSeries(t.seriesId, t.date);
-      closeSheet();
-      toast(`${seriesCount}개 삭제했어요`);
     });
   });
 }
@@ -606,6 +730,8 @@ function openBulkSheet() {
     const rowsEl = $('#bRows', sheet);
     const startEl = $('#bStart', sheet);
     const endEl = $('#bEnd', sheet);
+    endEl.min = startEl.value; // 종료일은 시작일 이후만
+    startEl.addEventListener('change', () => { endEl.min = startEl.value; });
     let rowCount = 2;
     bindKindSeg(sheet);
 
@@ -682,24 +808,26 @@ function openBulkSheet() {
   });
 }
 
-/* ───────────────── 사진·텍스트로 가져오기 ───────────────── */
+/* ───────────────── 사진으로 가져오기 / 텍스트로 추가하기 ───────────────── */
 
 const IMPORT_EXAMPLE = `11월
-• 14일 (토) MMA 📍고척돔
-• 19일 (목) 에터뷰 시즌2 2화
+• 14일 (토) 14:00 치과 예약
+• 19일 (목) 친구 생일
+• 25일 (수) 팀 회의
 12월
-• 3일 (목) 에터뷰 시즌2 3화`;
+• 3일 (목) 월세 내는 날`;
 
-function openImportSheet() {
-  openSheet('사진·텍스트로 가져오기', `
-    <p class="field-label">사진으로</p>
-    <p class="help">스케줄 사진을 고르면 Claude가 읽어서 날짜별로 정리해요. ${canReadPhotos() ? '' : '<b>설정에서 초대 코드를 먼저 넣어 주세요.</b>'}</p>
+// mode: 'photo' 사진으로 가져오기 / 'text' 텍스트로 추가하기 (미리보기·저장은 같이 씀)
+function openImportSheet(mode = 'photo') {
+  const photo = mode === 'photo';
+  openSheet(photo ? '사진으로 가져오기' : '텍스트로 추가하기', photo ? `
+    <p class="help">스케줄이 포함된 사진을 넣으면 날짜별로 일정을 정리해줘요. ${canReadPhotos() ? '' : '<b>설정에서 초대 코드를 먼저 넣어 주세요.</b>'}</p>
     <button class="btn primary" type="button" id="imPhoto">사진 고르기</button>
     <input type="file" id="imFile" accept="image/*" hidden>
-    <p class="field-label im-gap">텍스트로</p>
-    <p class="help">사진 앱에서 이미지 글자를 길게 눌러 <b>모두 선택 → 복사</b>한 뒤 붙여넣으세요. "11월", "14일 (토) 제목", "11/14 제목" 같은 형식을 알아봐요.</p>
-    <textarea class="field" id="imText" rows="6" placeholder="${esc(IMPORT_EXAMPLE)}"></textarea>
-    <button class="btn soft" type="button" id="imParse">텍스트 정리하기</button>
+    <div id="imResult"></div>` : `
+    <p class="help">예시처럼 텍스트를 넣으면 일정을 정리해줘요.</p>
+    <textarea class="field" id="imText" rows="8" placeholder="${esc(IMPORT_EXAMPLE)}"></textarea>
+    <button class="btn primary" type="button" id="imParse">정리하기</button>
     <div id="imResult"></div>`, (sheet) => {
     const textEl = $('#imText', sheet);
     const fileEl = $('#imFile', sheet);
@@ -744,6 +872,7 @@ function openImportSheet() {
                   <input type="date" value="${it.date}" data-pv-date>
                   ${it.time ? `<input type="time" value="${it.time}" data-pv-time>` : ''}
                   ${it.kind === 'todo' ? '<span class="badge">할 일</span>' : ''}
+                  ${it.endDate ? `<span class="badge">~ ${shortMD(it.endDate)}</span>` : ''}
                 </div>
                 <input class="field" value="${esc(it.title)}" data-pv-title>
                 ${it.reasons.map((r) => `<p class="warn-text">⚠︎ ${esc(r)}</p>`).join('')}
@@ -772,6 +901,7 @@ function openImportSheet() {
               time: timeEl && timeEl.value ? timeEl.value : null,
               color,
               dateUndecided: it.dateUndecided && date === it.date,
+              endDate: it.endDate && it.endDate > date ? it.endDate : null,
             };
           })
           .filter((t) => t.title && t.date);
@@ -804,20 +934,20 @@ function openImportSheet() {
       }
     };
 
-    $('#imPhoto', sheet).addEventListener('click', () => {
+    $('#imPhoto', sheet)?.addEventListener('click', () => {
       if (!canReadPhotos()) {
         toast('설정에서 초대 코드를 먼저 넣어 주세요');
         return;
       }
       fileEl.click();
     });
-    fileEl.addEventListener('change', () => {
+    fileEl?.addEventListener('change', () => {
       const f = fileEl.files[0];
       fileEl.value = '';
       readPhoto(f);
     });
 
-    $('#imParse', sheet).addEventListener('click', () => {
+    $('#imParse', sheet)?.addEventListener('click', () => {
       items = parseScheduleText(textEl.value).map((it) => ({ time: null, ...it }));
       if (!items.length) {
         showMessage('<p class="empty">날짜를 찾지 못했어요. "11월", "14일 (토) 제목" 같은 형식인지 확인해 주세요.</p>');
@@ -830,7 +960,7 @@ function openImportSheet() {
 
 /* ───────────────── 이번 달 일정 공유 (텍스트) ───────────────── */
 
-// 받은 사람이 '사진·텍스트로 가져오기'에 그대로 붙여넣을 수 있는 형식
+// 받은 사람이 '텍스트로 추가하기'에 그대로 붙여넣을 수 있는 형식
 const TODO_TAG = '[할일]';
 
 // 공유 범위: 월간이면 이번 달, 주간이면 이번 주
@@ -855,7 +985,7 @@ function shareRange() {
   };
 }
 
-// 받은 사람이 '사진·텍스트로 가져오기'에 그대로 붙여넣을 수 있는 형식
+// 받은 사람이 '텍스트로 추가하기'에 그대로 붙여넣을 수 있는 형식
 // - 월간: "• 14일 (토) ..." (머리글의 연·월을 따름)
 // - 주간: 달이 바뀔 수 있어서 "• 11월 14일 (토) ..."처럼 월까지 적음
 function shareText(range, { withSeries = true, withTodos = false } = {}) {
@@ -864,10 +994,24 @@ function shareText(range, { withSeries = true, withTodos = false } = {}) {
   const undecided = new Map(); // 월 → 줄들
   let events = 0;
   let todos = 0;
+  const seen = new Set();
+  const rangeMonth = range.start.getMonth();
+  const dayLabel = (dd, withMonth) => `${withMonth ? `${dd.getMonth() + 1}월 ` : ''}${dd.getDate()}일 (${WEEKDAYS[dd.getDay()]})`;
   for (const [ds, list] of [...map.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const d = parseYmd(ds);
     for (const t of list) {
       if ((isTodo(t) && !withTodos) || (!withSeries && t.seriesId)) continue;
+      if (seen.has(t.id)) continue; // 연속 일정은 한 번만
+      seen.add(t.id);
+      if (isSpanning(t)) {
+        events += 1;
+        const s0 = parseYmd(t.date);
+        const s1 = parseYmd(t.endDate);
+        const startWithMonth = range.week || s0.getMonth() !== rangeMonth || s0.getFullYear() !== range.start.getFullYear();
+        const endWithMonth = range.week || s1.getMonth() !== s0.getMonth();
+        dated.push({ key: t.date, line: `• ${dayLabel(s0, startWithMonth)} ~ ${dayLabel(s1, endWithMonth)}${t.time ? ` ${t.time}` : ''} ${t.title}` });
+        continue;
+      }
       if (isTodo(t)) todos += 1;
       else events += 1;
       const tag = isTodo(t) ? ` ${TODO_TAG}` : '';
@@ -877,11 +1021,11 @@ function shareText(range, { withSeries = true, withTodos = false } = {}) {
         undecided.get(mo).push(`• 날짜 미정 ·${tag} ${t.title}`);
         continue;
       }
-      const day = range.week ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getDate()}일`;
-      dated.push(`• ${day} (${WEEKDAYS[d.getDay()]})${tag}${t.time ? ` ${t.time}` : ''} ${t.title}`);
+      dated.push({ key: ds, line: `• ${dayLabel(d, range.week)}${tag}${t.time ? ` ${t.time}` : ''} ${t.title}` });
     }
   }
-  const lines = [...dated];
+  // 이전 달에 시작한 연속 일정은 맨 앞으로 (시작일 순)
+  const lines = dated.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map((x) => x.line);
   for (const [mo, list] of undecided) {
     if (range.week) lines.push(`${mo}월`); // 주간: 날짜 미정 항목이 몇 월인지 알 수 있게
     lines.push(...list);
@@ -895,7 +1039,7 @@ function openShareSheet() {
   const hasSeries = all.some((t) => t.seriesId);
   const hasTodos = all.some(isTodo);
   openSheet(range.title, `
-    <p class="help">${range.unit} 일정을 글로 만들어 보내요. 받은 사람도 이 앱을 쓰면 글을 복사해서 <b>사진·텍스트로 가져오기</b>에 붙여넣으면 자기 달력에 넣을 수 있어요.</p>
+    <p class="help">${range.unit} 일정을 글로 만들어 보내요. 받은 사람도 이 앱을 쓰면 글을 복사해서 <b>텍스트로 추가하기</b>에 붙여넣으면 자기 달력에 넣을 수 있어요.</p>
     ${hasSeries ? `
     <label class="row share-opt">
       <span>반복 일정 포함</span>

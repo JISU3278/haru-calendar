@@ -8,6 +8,7 @@
 //   (날짜 없는 줄) / 날짜 미정 · 제목        → 그 달 '날짜 미정' 항목
 //   📅 2026년 11월 일정                      → 앱에서 공유한 글의 머리글
 //   14일 (토) [할일] 제목                    → 할 일로 가져옴
+//   14일 (토) ~ 17일 (화) 제목               → 연속 일정 (11월 30일 ~ 12월 2일도 됨)
 import { daysInMonth, today as getToday, ymd } from './dates.js';
 
 const WD = '일월화수목금토';
@@ -117,6 +118,13 @@ export function parseScheduleText(text, base = getToday()) {
       if (yr === null) yr = inferYear(mo, base);
 
       let { rest } = hit;
+      // 기간: "~ 17일 (화)" / "~ 12월 2일"
+      let endHit = null;
+      const tilde = rest.match(/^[~∼〜\-–—]\s*/);
+      if (tilde) {
+        endHit = matchDate(rest.slice(tilde[0].length));
+        if (endHit) rest = endHit.rest;
+      }
       const dup = matchDate(rest);
       if (dup) {
         rest = dup.rest;
@@ -135,7 +143,15 @@ export function parseScheduleText(text, base = getToday()) {
       }
       const { kind, rest: afterKind } = splitKind(rest);
       const { time, rest: titlePart } = splitTime(afterKind);
-      items.push({ date: ymd(d), title: cleanTitle(titlePart) || '(제목 없음)', time, kind, dateUndecided: false, reasons });
+      let endDate = null;
+      if (endHit && kind === 'event') {
+        const em = endHit.mon ?? mo;
+        const ey = em < mo ? yr + 1 : yr; // 12월 ~ 1월
+        const eDay = Math.min(endHit.day, daysInMonth(ey, em - 1));
+        const e = ymd(new Date(ey, em - 1, eDay));
+        if (e > ymd(d)) endDate = e;
+      }
+      items.push({ date: ymd(d), title: cleanTitle(titlePart) || '(제목 없음)', time, kind, endDate, dateUndecided: false, reasons });
       continue;
     }
 

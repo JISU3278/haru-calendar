@@ -2,6 +2,12 @@
 // 나중에 Capacitor로 감쌀 때 save() 안에서 위젯용 공유 저장소(App Group)에도
 // "오늘 할 일"을 함께 쓰도록 한 군데만 고치면 됩니다.
 import { DEFAULT_COLOR } from './colors.js';
+import { addDays, parseYmd, ymd } from './dates.js';
+
+const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// 연속 일정의 마지막 날 (하루짜리는 시작일과 같음)
+export const lastDay = (t) => t.endDate || t.date;
+export const isSpanning = (t) => !!t.endDate;
 
 const KEY = 'haru.tasks.v1';
 let tasks = null;
@@ -43,6 +49,8 @@ function normalize(t) {
     note: t.note || '',
     seriesId: t.seriesId || null, // 반복 일괄 등록으로 만든 묶음
     dateUndecided: !!t.dateUndecided, // "3월 중"처럼 날짜 미정
+    // 연속 일정(일정만): 종료일이 시작일보다 뒤일 때만
+    endDate: t.kind === 'event' && VALID_DATE.test(t.endDate || '') && t.endDate > t.date ? t.endDate : null,
     createdAt: t.createdAt || Date.now(),
     order: Number.isFinite(t.order) ? t.order : null, // 직접 정한 순서 (null이면 등록 순)
   };
@@ -67,16 +75,27 @@ export const store = {
   },
 
   byDate(date) {
-    return load().filter((t) => t.date === date).sort(sortTasks);
+    return load().filter((t) => t.date <= date && date <= lastDay(t)).sort(sortTasks);
   },
 
   // start~end(포함) 사이 할 일을 날짜별로 묶어서 반환
   groupByDate(start, end) {
     const map = new Map();
     for (const t of load()) {
-      if (t.date < start || t.date > end) continue;
-      if (!map.has(t.date)) map.set(t.date, []);
-      map.get(t.date).push(t);
+      if (t.date > end || lastDay(t) < start) continue;
+      if (!t.endDate) {
+        if (!map.has(t.date)) map.set(t.date, []);
+        map.get(t.date).push(t);
+        continue;
+      }
+      // 연속 일정: 걸쳐 있는 날마다 넣음
+      const from = t.date < start ? start : t.date;
+      const to = t.endDate > end ? end : t.endDate;
+      for (let d = parseYmd(from); ymd(d) <= to; d = addDays(d, 1)) {
+        const ds = ymd(d);
+        if (!map.has(ds)) map.set(ds, []);
+        map.get(ds).push(t);
+      }
     }
     for (const list of map.values()) list.sort(sortTasks);
     return map;
@@ -97,6 +116,7 @@ export const store = {
       t.createdAt = Date.now();
     }
     Object.assign(t, patch);
+    if (t.endDate && (t.kind !== 'event' || t.endDate <= t.date)) t.endDate = null;
     save();
   },
 
@@ -116,6 +136,16 @@ export const store = {
 
   countSeries(seriesId, fromDate) {
     return load().filter((t) => t.seriesId === seriesId && t.date >= fromDate).length;
+  },
+
+  // 반복 일정 한꺼번에 수정: fromDate 이후의 같은 묶음에 patch 적용 (날짜는 바꾸지 않음)
+  updateSeries(seriesId, fromDate, patch) {
+    const { date, endDate, dateUndecided, ...rest } = patch;
+    for (const t of load()) {
+      if (t.seriesId !== seriesId || t.date < fromDate) continue;
+      Object.assign(t, rest);
+    }
+    save();
   },
 
   removeSeries(seriesId, fromDate) {

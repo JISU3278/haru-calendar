@@ -95,10 +95,11 @@ const SCHEMA = {
           date: { type: 'string', description: 'YYYY-MM-DD' },
           title: { type: 'string' },
           time: { type: 'string', description: 'HH:MM (24시간), 없으면 빈 문자열' },
+          end_date: { type: 'string', description: '여러 날 이어지는 일정의 마지막 날 YYYY-MM-DD, 하루짜리면 빈 문자열' },
           date_undecided: { type: 'boolean' },
           note: { type: 'string', description: '확인이 필요한 이유, 없으면 빈 문자열' },
         },
-        required: ['date', 'title', 'time', 'date_undecided', 'note'],
+        required: ['date', 'title', 'time', 'end_date', 'date_undecided', 'note'],
         additionalProperties: false,
       },
     },
@@ -112,7 +113,7 @@ function prompt(todayStr) {
 
 - 연도가 없으면 오늘과 가장 가까운 미래(또는 아주 최근) 날짜가 되도록 연도를 정하세요.
 - 날짜 없이 "11월 중"처럼 월만 있는 항목은 그 달 1일로 하고 date_undecided를 true로 하세요.
-- 한 일정이 여러 날에 걸치면 날짜마다 따로 항목을 만드세요.
+- 여행·출장처럼 여러 날 이어지는 일정은 항목 하나로 만들고, 시작일을 date, 마지막 날을 end_date에 넣으세요. 하루짜리는 end_date를 빈 문자열로 두세요.
 - title은 이미지에 적힌 표현을 살려 짧게 쓰고, 장소가 있으면 제목 뒤에 붙이세요. 이모지 장식은 빼세요.
 - 시작 시간이 적혀 있으면 time에 24시간 HH:MM으로, 없으면 빈 문자열로 두세요.
 - 글자가 흐리거나 날짜·요일이 서로 맞지 않는 등 확인이 필요하면 note에 한국어로 짧게 적고, 아니면 빈 문자열로 두세요.
@@ -179,6 +180,7 @@ export async function readScheduleImage(file, { strong = false } = {}) {
       date: it.date,
       title: String(it.title || '').trim() || '(제목 없음)',
       time: VALID_TIME.test(it.time) ? it.time : null,
+      endDate: VALID_DATE.test(it.end_date || '') && it.end_date > it.date ? it.end_date : null,
       dateUndecided: !!it.date_undecided,
       reasons: [it.note && it.note.trim(), it.date_undecided && '날짜가 정해지지 않아 1일로 넣었어요']
         .filter(Boolean),
