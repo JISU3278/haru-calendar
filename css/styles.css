@@ -214,7 +214,6 @@ svg { display: block; }
 
 /* ───── 주간 ───── */
 .week { padding: 4px 16px calc(110px + var(--safe-bottom)); }
-.week-hint { margin: 14px 0 0; text-align: center; font-size: 12px; color: var(--faint); }
 .wday { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .wday-head { flex: none; width: 42px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 2px; }
 .wday-head .wd { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -225,12 +224,8 @@ svg { display: block; }
 .wday-body { flex: 1; min-width: 0; }
 .wday-body .tasks { gap: 6px; }
 .wday-body .task { padding: 9px 10px 9px calc(var(--task-r) + 10px); }
-/* 추가 버튼: 배경 없이 글자만 왼쪽 정렬 (빈 날은 요일·날짜 높이의 세로 가운데) */
-.wday-empty { display: block; width: 100%; height: auto; padding: 0; line-height: 20px; border-radius: 6px; background: none; text-align: left; color: var(--faint); font-size: 14px; font-weight: 600; }
-.wday-body:has(> .wday-empty:only-child) { align-self: center; } /* 빈 날: 요일·날짜 높이의 세로 가운데 */
-.wday-empty:active { background: var(--sel); }
-/* 일정이 있는 날: 목록 아래 조금 낮은 추가 버튼 */
-.wday-empty.wday-add { margin-top: 8px; }
+/* 그 날 줄의 빈 곳을 누르면 일정 추가 (일정 카드·날짜를 누르면 각자 동작) */
+.wday { cursor: pointer; }
 
 /* ───── 일간 ───── */
 .section-label { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }

@@ -269,18 +269,17 @@ function renderWeek() {
     const list = map.get(ds) || [];
     const cls = ['wday', d.getDay() === 0 && 'sun', d.getDay() === 6 && 'sat', ds === todayStr && 'today'].filter(Boolean).join(' ');
     html += `
-      <section class="${cls}">
+      <section class="${cls}" data-action="add" data-for="${ds}">
         <button class="wday-head" type="button" data-goto-day="${ds}" aria-label="${formatMD(d)} 월간에서 보기">
           <span class="wd">${WEEKDAYS[d.getDay()]}</span>
           <span class="dn">${d.getDate()}</span>
         </button>
         <div class="wday-body">
           ${list.length ? renderTaskList(list) : ''}
-          <button class="wday-empty ${list.length ? 'wday-add' : ''}" type="button" data-action="add" data-for="${ds}">+ 추가</button>
         </div>
       </section>`;
   }
-  return `<div class="week">${html}<p class="week-hint">맨 아래에서 위로 밀면 다음 주 · 맨 위에서 아래로 당기면 지난주</p></div>`;
+  return `<div class="week">${html}</div>`;
 }
 
 /* ───────────────── 이동 ───────────────── */
@@ -375,22 +374,72 @@ document.addEventListener('touchstart', (e) => {
   touchStart = { x: t.clientX, y: t.clientY, top: window.scrollY <= EDGE, bottom: scrollBottomGap() <= EDGE };
   touchLast = { x: t.clientX, y: t.clientY };
 }, { passive: true });
+const weekPull = (dy) => {
+  const el = $('.week');
+  if (!el) return;
+  el.style.transition = 'none';
+  // 고무줄처럼: 많이 당길수록 덜 따라옴
+  const pull = Math.sign(dy) * Math.min(90, Math.abs(dy) * 0.45);
+  el.style.transform = `translateY(${pull}px)`;
+  el.style.opacity = String(1 - Math.min(0.35, Math.abs(pull) / 260));
+};
 document.addEventListener('touchmove', (e) => {
-  if (touchStart) touchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  if (!touchStart) return;
+  touchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  if (state.view !== 'week' || isEditing()) return;
+  const dy = touchLast.y - touchStart.y;
+  const dx = touchLast.x - touchStart.x;
+  if (Math.abs(dy) < Math.abs(dx)) return;
+  if ((dy > 0 && touchStart.top) || (dy < 0 && touchStart.bottom)) weekPull(dy);
 }, { passive: true });
+
+// 주 바꾸기 애니메이션: 지금 주는 밀린 방향으로 빠지고, 새 주가 반대쪽에서 들어옴
+let weekAnimating = false;
+function slideWeek(dir) {
+  const old = $('.week');
+  if (!old || weekAnimating) { step(dir); return; }
+  weekAnimating = true;
+  const EASE = 'transform 0.22s cubic-bezier(0.4, 0, 1, 1), opacity 0.22s';
+  old.style.transition = EASE;
+  old.style.transform = `translateY(${dir > 0 ? -60 : 60}px)`;
+  old.style.opacity = '0';
+  setTimeout(() => {
+    step(dir);
+    window.scrollTo(0, 0);
+    const fresh = $('.week');
+    if (fresh) {
+      fresh.style.transition = 'none';
+      fresh.style.transform = `translateY(${dir > 0 ? 60 : -60}px)`;
+      fresh.style.opacity = '0';
+      fresh.getBoundingClientRect(); // 시작 위치 적용
+      fresh.style.transition = 'transform 0.32s cubic-bezier(0.22, 0.8, 0.24, 1), opacity 0.32s';
+      fresh.style.transform = 'none';
+      fresh.style.opacity = '1';
+    }
+    setTimeout(() => { weekAnimating = false; }, 320);
+  }, 200);
+}
+function weekSpringBack() {
+  const el = $('.week');
+  if (!el || !el.style.transform) return;
+  el.style.transition = 'transform 0.3s cubic-bezier(0.22, 0.8, 0.24, 1), opacity 0.3s';
+  el.style.transform = 'none';
+  el.style.opacity = '1';
+}
 const finishSwipe = (e) => {
   if (!touchStart) return;
   const t = e.changedTouches?.[0] || touchLast;
   const end = t ? { x: t.clientX ?? t.x, y: t.clientY ?? t.y } : touchLast;
   const start = touchStart;
   touchStart = null;
-  if (!end || isEditing()) return; // 편집 중에는 넘기지 않음
+  if (!end || isEditing()) { weekSpringBack(); return; } // 편집 중에는 넘기지 않음
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   if (state.view === 'week') {
-    if (Math.abs(dy) < SWIPE || Math.abs(dy) < Math.abs(dx) * 1.2) return;
-    if (dy < 0 && start.bottom) { step(1); window.scrollTo(0, 0); }
-    else if (dy > 0 && start.top) { step(-1); window.scrollTo(0, 0); }
+    const vertical = Math.abs(dy) >= SWIPE && Math.abs(dy) >= Math.abs(dx) * 1.2;
+    if (vertical && dy < 0 && start.bottom) slideWeek(1);
+    else if (vertical && dy > 0 && start.top) slideWeek(-1);
+    else weekSpringBack();
     return;
   }
 };
