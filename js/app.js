@@ -309,6 +309,13 @@ $$('.tabbar [data-view]').forEach((b) => b.addEventListener('click', () => setVi
 $('#todayBtn').addEventListener('click', () => { state.cursor = today(); render(); });
 $('#settingsBtn').addEventListener('click', openSettingsSheet);
 $('#shareBtn').addEventListener('click', openShareSheet);
+// 스크롤해서 내용이 상단바 밑으로 들어가면 상단바에 옅은 그림자
+{
+  const bar = $('.topbar');
+  const onScroll = () => bar.classList.toggle('scrolled', window.scrollY > 2);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+}
 // 상단 제목(2026년 11월)을 누르면 연·월 선택 → 그 달로 이동
 // (이번 달이면 오늘, 아니면 지금 고른 날짜와 같은 '일'로. 그 달에 없는 날이면 말일)
 $('#title').addEventListener('click', () => {
