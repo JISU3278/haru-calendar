@@ -161,7 +161,6 @@ svg { display: block; }
 .panel { padding: 14px 16px calc(110px + var(--safe-bottom)); }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 0 12px; }
 .panel-head h2 { margin: 0; font-size: 17px; font-weight: 800; }
-.section-label .count { font-size: 13px; font-weight: 400; color: var(--muted); }
 
 /* ───── 할 일 목록 ───── */
 .tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -228,7 +227,10 @@ svg { display: block; }
 .wday { cursor: pointer; }
 
 /* ───── 일간 ───── */
-.section-label { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.section-label { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+/* 제목 줄 오른쪽 + 동그라미 버튼 */
+.sec-add { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary-soft-ink); }
+.sec-add:active { background: var(--primary); color: var(--primary-ink); }
 
 /* ───── 추가 버튼 ───── */
 .fab {
@@ -385,7 +387,7 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 
 /* ───── 이번 달 일정 공유 ───── */
 /* 공유 버튼: 제목 줄 오른쪽 (월간: 이번 달, 주간: 이번 주) */
-.share-btn { width: auto; height: 32px; padding: 0 0 0 6px; display: flex; align-items: center; gap: 3px; color: var(--muted); }
+.share-btn { width: auto; height: 32px; padding: 0 0 0 4px; display: flex; align-items: center; gap: 3px; color: var(--muted); }
 /* 버튼 터치 영역은 그대로, 안쪽 글자만 작은 회색 칩 모양 */
 .share-label {
   display: inline-flex; align-items: center; gap: 3px; padding: 4px 7px; border-radius: 4px; font-size: 14px; font-weight: 600; line-height: 1;
@@ -400,7 +402,7 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 
 /* 아이콘 버튼은 상자 가운데에 그림이 있어서 오른쪽 끝이 안쪽으로 보임
    → 그림의 오른쪽 끝이 화면 오른쪽 여백(공유 버튼 끝)에 맞도록 밀어줌 */
-#settingsBtn { margin-right: -8px; }
+#settingsBtn { margin-right: -8px; margin-left: -4px; } /* 오늘·공유·설정이 눈으로 8px씩 떨어져 보이게 */
 .share-hint { margin-left: 6px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .pv-when { align-items: center; }
 
@@ -499,3 +501,33 @@ textarea.field { height: auto; min-height: 90px; padding: 12px 14px; resize: ver
 .grid-viewport { overflow: hidden; }
 .mtrack { display: flex; align-items: flex-start; will-change: transform; }
 .mtrack > .grid { flex: none; }
+
+/* ───── 아래 탭바: 월간 · 추가 · 주간 (떠 있는 둥근 막대, 추가는 위로 솟은 동그라미) ───── */
+.tabbar {
+  position: fixed; z-index: 20; left: 16px; right: 16px; bottom: calc(12px + var(--safe-bottom));
+  max-width: calc(var(--maxw) - 32px); margin: 0 auto;
+  display: flex; gap: 4px; padding: 4px; border-radius: 26px;
+  /* 반투명 + 흐림: 뒤 내용이 살짝 비침 */
+  background: rgba(255, 255, 255, 0.6); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+.tab {
+  flex: 1; height: 40px; border-radius: 20px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  font-size: 10px; font-weight: 500; color: var(--text);
+}
+.tab svg { width: 19px; height: 19px; }
+.tab.on { background: var(--sel); }
+.tab[data-view]:active { background: var(--sel); }
+/* 추가: 막대 위로 살짝(14px) 솟은 테마색 동그라미 */
+.tab-add { position: relative; justify-content: flex-end; padding-bottom: 4px; }
+.add-circle {
+  position: absolute; left: 50%; top: -18px; transform: translateX(-50%);
+  width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--primary); color: var(--primary-ink);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+}
+.add-circle svg { width: 24px; height: 24px; }
+.tab-add:active .add-circle { transform: translateX(-50%) scale(0.94); }
+/* 상단: 제목 + 공유·오늘·설정 한 줄 */
+.topbar .title { min-width: 0; }

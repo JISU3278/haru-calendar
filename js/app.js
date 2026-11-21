@@ -90,7 +90,7 @@ function render() {
   const { view, cursor } = state;
   $('#title').textContent = formatYM(cursor);
 
-  $$('.seg button').forEach((b) => {
+  $$('.tabbar [data-view]').forEach((b) => {
     const on = b.dataset.view === view;
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', on);
@@ -129,13 +129,18 @@ function renderTaskList(list, editing = false) {
 }
 
 // 하루 목록: 일정 / 할 일 두 묶음으로
-function renderSections(list) {
+const PLUS_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+
+// 날짜 목록: '일정' / '할 일' 묶음. 각 제목 줄 오른쪽 끝 + 버튼으로 그 날에 추가
+function renderSections(list, ds) {
   const events = list.filter((t) => !isTodo(t));
   const todos = list.filter(isTodo);
   const editing = isEditing();
+  const label = (kind, text) => `
+    <div class="section-label"><span>${text}</span>${editing ? '' : `<button class="sec-add" type="button" data-action="add" data-kind="${kind}" data-for="${ds}" aria-label="${text} 추가">${PLUS_SVG}</button>`}</div>`;
   return `
-    ${events.length ? `<p class="section-label">일정</p>${renderTaskList(events, editing)}` : ''}
-    ${todos.length ? `<p class="section-label">할 일<span class="count">${todoCount(list)}</span></p>${renderTaskList(todos, editing)}` : ''}`;
+    ${label('event', '일정')}${events.length ? renderTaskList(events, editing) : ''}
+    ${label('todo', '할 일')}${todos.length ? renderTaskList(todos, editing) : ''}`;
 }
 
 // 날짜 목록 머리: 날짜 · 완료 개수 · 편집 버튼(2개 이상일 때)
@@ -148,20 +153,6 @@ function panelHead(d, list) {
           ${list.length > 1 ? `<button class="edit-btn ${editing ? 'on' : ''}" type="button" data-action="edit-order">${editing ? '완료' : '편집'}</button>` : ''}
         </div>
       </div>`;
-}
-
-function todoCount(list) {
-  const todos = list.filter(isTodo);
-  return todos.length ? `할 일 ${todos.filter((t) => t.done).length}/${todos.length} 완료` : '';
-}
-
-function addButtons(ds) {
-  if (isEditing()) return '';
-  return `
-    <div class="add-row">
-      <button class="add-inline" type="button" data-action="add" data-kind="event" data-for="${ds}">+ 일정</button>
-      <button class="add-inline" type="button" data-action="add" data-kind="todo" data-for="${ds}">+ 할 일</button>
-    </div>`;
 }
 
 // 월 달력 칸(그리드 안쪽)만 그림. cursor = 그 달의 선택 날짜
@@ -252,8 +243,7 @@ function renderMonth() {
     </section>
     <section class="panel">
       ${panelHead(cursor, selList)}
-      ${selList.length ? renderSections(selList) : '<p class="empty">일정과 할 일이 없어요</p>'}
-      ${addButtons(selStr)}
+      ${renderSections(selList, selStr)}
     </section>`;
 }
 
@@ -299,11 +289,11 @@ function step(dir) {
   render();
 }
 
-$$('.seg button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+$$('.tabbar [data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 $('#todayBtn').addEventListener('click', () => { state.cursor = today(); render(); });
 $('#settingsBtn').addEventListener('click', openSettingsSheet);
 $('#shareBtn').addEventListener('click', openShareSheet);
-$('#fab').addEventListener('click', openActionSheet);
+$('#addTab').addEventListener('click', openActionSheet);
 
 $('#main').addEventListener('click', (e) => {
   const el = e.target.closest('[data-action], [data-date], [data-goto-day]');
