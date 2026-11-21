@@ -8,8 +8,9 @@ import {
 import {
   PROXY_URL, canReadPhotos, getApiKey, getInvite, readScheduleImage, setApiKey, setInvite,
 } from './ai.js';
+import { holidayName } from './holidays.js';
 import { parseScheduleText } from './parser.js';
-import { watchPickers } from './pickers.js';
+import { pickMonth, watchPickers } from './pickers.js';
 import { countWeekly, expandWeekly } from './recurrence.js';
 import { isSpanning, lastDay, store } from './store.js';
 
@@ -18,6 +19,20 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 // 바텀시트 안의 날짜·시간·색 입력칸을 앱 전용 선택 화면으로 (아이폰·갤럭시 같은 모양)
 watchPickers(document.getElementById('sheetRoot'));
+
+// 바텀시트 한 줄 입력칸: 키보드 엔터 = 키보드 닫기 (아이폰·갤럭시 똑같이)
+// 아이폰은 엔터로 폼이 바로 제출되고, 갤럭시는 다음 칸으로 넘어가서 서로 달랐음
+{
+  const root = document.getElementById('sheetRoot');
+  const markInputs = () => root.querySelectorAll('input:not([type="hidden"]):not([enterkeyhint])')
+    .forEach((el) => el.setAttribute('enterkeyhint', 'done')); // 키보드 엔터 키를 '완료'로 표시
+  new MutationObserver(markInputs).observe(root, { childList: true, subtree: true });
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing || e.target.tagName !== 'INPUT') return;
+    e.preventDefault(); // 폼 제출 막기
+    e.target.blur(); // 키보드 내리기
+  });
+}
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -148,7 +163,7 @@ function panelHead(d, list) {
   const editing = isEditing();
   return `
       <div class="panel-head">
-        <h2>${formatMD(d)}</h2>
+        <h2>${formatMD(d)}${holidayName(ymd(d)) ? `<span class="holiday-name">${holidayName(ymd(d))}</span>` : ''}</h2>
         <div class="panel-right">
           ${list.length > 1 ? `<button class="edit-btn ${editing ? 'on' : ''}" type="button" data-action="edit-order">${editing ? '완료' : '편집'}</button>` : ''}
         </div>
@@ -209,6 +224,7 @@ function monthGridHTML(cursor) {
       'cell',
       d.getMonth() !== m && 'out',
       d.getDay() === 0 && 'sun',
+      holidayName(ds) && 'holiday',
       d.getDay() === 6 && 'sat',
       ds === todayStr && 'today',
       ds === selStr && 'sel',
@@ -257,7 +273,7 @@ function renderWeek() {
     const d = addDays(start, i);
     const ds = ymd(d);
     const list = map.get(ds) || [];
-    const cls = ['wday', d.getDay() === 0 && 'sun', d.getDay() === 6 && 'sat', ds === todayStr && 'today'].filter(Boolean).join(' ');
+    const cls = ['wday', d.getDay() === 0 && 'sun', d.getDay() === 6 && 'sat', holidayName(ds) && 'holiday', ds === todayStr && 'today'].filter(Boolean).join(' ');
     html += `
       <section class="${cls}" data-action="add" data-for="${ds}">
         <button class="wday-head" type="button" data-goto-day="${ds}" aria-label="${formatMD(d)} 월간에서 보기">
@@ -293,6 +309,18 @@ $$('.tabbar [data-view]').forEach((b) => b.addEventListener('click', () => setVi
 $('#todayBtn').addEventListener('click', () => { state.cursor = today(); render(); });
 $('#settingsBtn').addEventListener('click', openSettingsSheet);
 $('#shareBtn').addEventListener('click', openShareSheet);
+// 상단 제목(2026년 11월)을 누르면 연·월 선택 → 그 달로 이동
+// (이번 달이면 오늘, 아니면 지금 고른 날짜와 같은 '일'로. 그 달에 없는 날이면 말일)
+$('#title').addEventListener('click', () => {
+  pickMonth(ymd(state.cursor), (y, m) => {
+    const now = today();
+    state.cursor = y === now.getFullYear() && m === now.getMonth()
+      ? now
+      : new Date(y, m, Math.min(state.cursor.getDate(), daysInMonth(y, m)));
+    render();
+    window.scrollTo(0, 0);
+  });
+});
 $('#addTab').addEventListener('click', openActionSheet);
 
 $('#main').addEventListener('click', (e) => {

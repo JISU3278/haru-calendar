@@ -5,6 +5,7 @@
 // 원래 입력칸 그대로라서 다른 코드는 고칠 필요가 없습니다.
 // 날짜 칸의 min 속성(YYYY-MM-DD)이 있으면 그보다 앞 날짜는 고를 수 없습니다.
 import { WEEKDAYS, addMonths, daysInMonth, parseYmd, today, ymd } from './dates.js';
+import { holidayName } from './holidays.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const CHEV_L = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
@@ -67,7 +68,7 @@ function openDatePicker(input) {
           'pk-day',
           ds === selected && 'on',
           ds === todayStr && 'today',
-          wd === 0 && 'sun',
+          (wd === 0 || holidayName(ds)) && 'sun',
           wd === 6 && 'sat',
         ].filter(Boolean).join(' ');
         cells += `<button type="button" class="${cls}" data-d="${ds}" ${min && ds < min ? 'disabled' : ''}>${d}</button>`;
@@ -98,6 +99,61 @@ function openDatePicker(input) {
       const dx = e.changedTouches[0].clientX - sx;
       sx = null;
       if (Math.abs(dx) > 50) { view = addMonths(view, dx < 0 ? 1 : -1); draw(); }
+    }, { passive: true });
+  });
+}
+
+// 입력칸 없이 날짜만 고르기: 고르면 'YYYY-MM-DD'로 onPick 호출 (예: 상단 제목 눌러 날짜 이동)
+export function pickDate(value, onPick) {
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.value = value;
+  input.addEventListener('change', () => onPick(input.value));
+  openDatePicker(input);
+}
+
+// 연·월 고르기: 위에서 연도를 넘기고 12개월 중 탭 → onPick(year, monthIndex)
+export function pickMonth(value, onPick) {
+  const cur = parseYmd(value);
+  const now = today();
+  let year = cur.getFullYear();
+  openPicker('<div data-ym></div>', (box, close, wrap) => {
+    const draw = () => {
+      let months = '';
+      for (let m = 0; m < 12; m++) {
+        const cls = [
+          'pk-month',
+          year === cur.getFullYear() && m === cur.getMonth() && 'on',
+          year === now.getFullYear() && m === now.getMonth() && 'today',
+        ].filter(Boolean).join(' ');
+        months += `<button type="button" class="${cls}" data-m="${m}">${m + 1}월</button>`;
+      }
+      box.querySelector('[data-ym]').innerHTML = `
+        <div class="pk-head">
+          <button type="button" class="pk-nav" data-ystep="-1" aria-label="이전 해">${CHEV_L}</button>
+          <strong>${year}년</strong>
+          <button type="button" class="pk-nav" data-ystep="1" aria-label="다음 해">${CHEV_R}</button>
+        </div>
+        <div class="pk-months">${months}</div>
+        <button type="button" class="pk-today" data-thismonth>이번 달</button>`;
+    };
+    draw();
+    box.addEventListener('click', (e) => {
+      const ys = e.target.closest('[data-ystep]');
+      if (ys) { year += Number(ys.dataset.ystep); draw(); return; }
+      const mb = e.target.closest('[data-m]');
+      if (mb) { onPick(year, Number(mb.dataset.m)); close(); return; }
+      if (e.target.closest('[data-thismonth]')) { onPick(now.getFullYear(), now.getMonth()); close(); }
+    });
+    wrap.querySelector('[data-cancel]').addEventListener('click', close);
+    // 좌우로 밀어서 연도 넘기기
+    let sx = null;
+    box.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; }, { passive: true });
+    box.addEventListener('touchend', (e) => {
+      if (sx === null) return;
+      const dx = e.changedTouches[0].clientX - sx;
+      sx = null;
+      if (Math.abs(dx) > 50) { year += dx < 0 ? 1 : -1; draw(); }
     }, { passive: true });
   });
 }
